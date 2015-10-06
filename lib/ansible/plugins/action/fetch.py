@@ -18,7 +18,8 @@ from __future__ import (absolute_import, division, print_function)
 __metaclass__ = type
 
 import os
-import pwd
+try:import pwd
+except ImportError:import winpwd
 import random
 import traceback
 import tempfile

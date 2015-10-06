@@ -20,7 +20,8 @@ from __future__ import (absolute_import, division)
 __metaclass__ = type
 
 import os
-import pwd
+try:import pwd
+except ImportError:import winpwd
 import sys
 from string import ascii_letters, digits
 

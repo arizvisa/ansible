@@ -19,7 +19,8 @@
 from __future__ import (absolute_import, division, print_function)
 __metaclass__ = type
 
-import pwd
+try:import pwd
+except ImportError:import winpwd
 import os
 
 from ansible.compat.tests import unittest

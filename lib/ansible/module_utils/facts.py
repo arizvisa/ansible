@@ -30,7 +30,8 @@ import socket
 import struct
 import datetime
 import getpass
-import pwd
+try:import pwd
+except ImportError:import winpwd
 import ConfigParser
 import StringIO
 

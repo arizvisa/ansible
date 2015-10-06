@@ -62,8 +62,10 @@ import shutil
 import stat
 import tempfile
 import traceback
-import grp
-import pwd
+try:import grp
+except ImportError:import wingrp
+try:import pwd
+except ImportError:import winpwd
 import platform
 import errno
 from itertools import imap, repeat

@@ -24,7 +24,8 @@ import hmac
 import os
 import pipes
 import pty
-import pwd
+try:import pwd
+except ImportError:import winpwd
 import random
 import re
 import select
