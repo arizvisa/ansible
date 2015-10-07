@@ -1,4 +1,5 @@
-import ctypes,platform
+import ctypes,platform,os,itertools
+which = lambda _,envvar="PATH",extvar='PATHEXT':_ if executable(_) else iter(filter(executable,itertools.starmap(os.path.join,itertools.product(os.environ.get(envvar,os.defpath).split(os.pathsep),(_+e for e in os.environ.get(extvar,'').split(os.pathsep)))))).next() 
 
 ### Constants
 STD_INPUT_HANDLE = -10
@@ -339,15 +340,21 @@ def spawn(stdout, command, **options):
             while program.running:
                 try:
                     if program.stderr and not program.stderr.empty():
-                        error(program.stderr.get(block=True))
-                    output(program.stdout.get(block=True))
+                        data = program.stderr.get(block=True)
+                        (not hasattr(error,'send') or error(data)) and error.send(data)
+                    data = program.stdout.get(block=True)
+                    (not hasattr(output,'send') or output(data)) and output.send(data)
+                except StopIteration:
+                    sys.stderr.write("Update callbacks for %r have raised a StopIteration, stopping process.\n"% (program))
+                    program.stop()
+                    return
                 except:
                     import traceback
                     _ = traceback.format_exception( *sys.exc_info() )
                     sys.stderr.write("Unexpected exception in update thread for %r:\n%s"% (program, '\n'.join(_)) )
                     time.sleep(1.0)
                 continue
-            sys.stderr.write("Update loop for %r attempted termination, spinning at %d intervals:\n%s"% (program, timeout))
+            sys.stderr.write("Update loop for %r attempted termination, spinning at %d intervals.\n"% (program, timeout))
             while not program.running: time.sleep(1.0)
         return
 
@@ -359,6 +366,8 @@ def spawn(stdout, command, **options):
 
     updater = threading.Thread(target=update, name="thread-%x.update"% program.id, args=(program,stdout,stderr))
     updater.daemon = daemon
+    updater.stdout = stdout
+    updater.stderr = stderr
     updater.start()
 
     program.updater = updater   # keep a publically available ref
