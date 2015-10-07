@@ -28,7 +28,6 @@ import time
 import logging
 import getpass
 from struct import unpack, pack
-from termios import TIOCGWINSZ
 from multiprocessing import Lock
 
 from ansible import constants as C

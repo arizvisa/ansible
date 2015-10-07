@@ -19,7 +19,7 @@ __metaclass__ = type
 
 import os
 try:import pwd
-except ImportError:import winpwd
+except ImportError:from ansible.utils import winpwd as pwd
 import random
 import traceback
 import tempfile

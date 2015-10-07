@@ -19,13 +19,12 @@ from __future__ import (absolute_import, division, print_function)
 __metaclass__ = type
 
 import gettext
-#import fcntl
 import hmac
 import os
 import pipes
 import pty
 try:import pwd
-except ImportError:import winpwd
+except ImportError:from ansible.utils import winpwd as pwd
 import random
 import re
 import select

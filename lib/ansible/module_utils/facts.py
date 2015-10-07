@@ -30,7 +30,7 @@ import struct
 import datetime
 import getpass
 try:import pwd
-except ImportError:import winpwd
+except ImportError:from ansible.utils import winpwd as pwd
 import ConfigParser
 import StringIO
 

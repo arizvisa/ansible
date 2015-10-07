@@ -63,9 +63,9 @@ import stat
 import tempfile
 import traceback
 try:import grp
-except ImportError:import wingrp
+except ImportError:from ansible.utils import wingrp as grp
 try:import pwd
-except ImportError:import winpwd
+except ImportError:from ansible.utils import winpwd as pwd
 import platform
 import errno
 from itertools import imap, repeat
