@@ -22,13 +22,13 @@ import traceback
 import os
 import shutil
 import subprocess
-import select
-import fcntl
+import time
 
 import ansible.constants as C
 
 from ansible.errors import AnsibleError, AnsibleFileNotFound
 from ansible.plugins.connections import ConnectionBase
+from ansible.utils import misc
 
 class Connection(ConnectionBase):
     ''' Local based connections '''
@@ -58,43 +58,33 @@ class Connection(ConnectionBase):
         executable = C.DEFAULT_EXECUTABLE.split()[0] if C.DEFAULT_EXECUTABLE else None
 
         self._display.vvv("{0} EXEC {1}".format(self._play_context.remote_addr, cmd))
-        # FIXME: cwd= needs to be set to the basedir of the playbook
-        self._display.debug("opening command with Popen()")
-        p = subprocess.Popen(
-            cmd,
-            shell=isinstance(cmd, basestring),
-            executable=executable, #cwd=...
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-        )
-        self._display.debug("done running command with Popen()")
 
-        if self._play_context.prompt  and self._play_context.become_pass and sudoable:
-            fcntl.fcntl(p.stdout, fcntl.F_SETFL, fcntl.fcntl(p.stdout, fcntl.F_GETFL) | os.O_NONBLOCK)
-            fcntl.fcntl(p.stderr, fcntl.F_SETFL, fcntl.fcntl(p.stderr, fcntl.F_GETFL) | os.O_NONBLOCK)
-            become_output = ''
-            while not self.check_become_success(become_output) and not self.check_password_prompt(become_output):
+        def process_stdout(chunk):
+            if not chunk:
+                raise AnsibleError('privilege output closed while waiting for password prompt:\n' + become_output)
+            become_output += chunk
+        def process_stderr(chunk):
+            if not chunk:
+                raise AnsibleError('privilege output closed while waiting for password prompt:\n' + become_output)
+            become_output += chunk
+            become_error += chunk
 
-                rfd, wfd, efd = select.select([p.stdout, p.stderr], [], [p.stdout, p.stderr], self._play_context.timeout)
-                if p.stdout in rfd:
-                    chunk = p.stdout.read()
-                elif p.stderr in rfd:
-                    chunk = p.stderr.read()
-                else:
-                    stdout, stderr = p.communicate()
-                    raise AnsibleError('timeout waiting for privilege escalation password prompt:\n' + become_output)
-                if not chunk:
-                    stdout, stderr = p.communicate()
-                    raise AnsibleError('privilege output closed while waiting for password prompt:\n' + become_output)
-                become_output += chunk
-            if not self.check_become_success(become_output):
-                p.stdin.write(self._play_context.become_pass + '\n')
-            fcntl.fcntl(p.stdout, fcntl.F_SETFL, fcntl.fcntl(p.stdout, fcntl.F_GETFL) & ~os.O_NONBLOCK)
-            fcntl.fcntl(p.stderr, fcntl.F_SETFL, fcntl.fcntl(p.stderr, fcntl.F_GETFL) & ~os.O_NONBLOCK)
+#        # FIXME: cwd= needs to be set to the basedir of the playbook
+        become_output,become_error = '',''
+        self._display.debug("opening command with misc.spawn()")
+        p = misc.spawn(process_output, cmd, shell=isinstance(cmd,basestring))
+        self._display.debug("done running command with misc.spawn()")
+
+        if self._play_context.prompt and self._play_context.become_pass and sudoable:
+            tick = tock = time.now()
+            while p.running and not self.check_become_success(become_output) and (tock - tick) < self._play_context.timeout
+                p.write(self._play_context.become_pass + '\n')
+                tock = time.now()
+            if tock-tick >= self._play_context.timeout:
+                raise AnsibleError('timeout waiting for privilege escalation password prompt:\n' + become_output)
 
         self._display.debug("getting output with communicate()")
-        stdout, stderr = p.communicate()
+        stdout,stderr = become_output,become_error
         self._display.debug("done communicating")
 
         self._display.debug("done with local.exec_command()")

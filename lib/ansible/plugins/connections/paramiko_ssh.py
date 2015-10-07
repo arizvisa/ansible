@@ -32,7 +32,6 @@ import random
 import logging
 import tempfile
 import traceback
-import fcntl
 import re
 import sys
 
@@ -43,6 +42,7 @@ from ansible import constants as C
 from ansible.errors import AnsibleError, AnsibleConnectionFailure, AnsibleFileNotFound
 from ansible.plugins.connections import ConnectionBase
 from ansible.utils.path import makedirs_safe
+from ansible.utils import misc
 
 AUTHENTICITY_MSG="""
 paramiko: The authenticity of host '%s' can't be established.
@@ -369,8 +369,8 @@ class Connection(ConnectionBase):
             dirname = os.path.dirname(self.keyfile)
             makedirs_safe(dirname)
 
-            KEY_LOCK = open(lockfile, 'w')
-            fcntl.lockf(KEY_LOCK, fcntl.LOCK_EX)
+            KEY_LOCK = misc.LockFile(lockfile, 'w')
+            KEY_LOCK.acquire()
 
             try:
                 # just in case any were added recently
@@ -403,7 +403,7 @@ class Connection(ConnectionBase):
                 # and caught earlier
                 traceback.print_exc()
                 pass
-            fcntl.lockf(KEY_LOCK, fcntl.LOCK_UN)
+            KEY_LOCK.release()
 
         self.ssh.close()
 

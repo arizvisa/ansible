@@ -20,7 +20,6 @@ import sys
 import stat
 import array
 import errno
-import fcntl
 import fnmatch
 import glob
 import platform

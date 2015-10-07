@@ -19,7 +19,6 @@
 from __future__ import (absolute_import, division, print_function)
 __metaclass__ = type
 
-import fcntl
 import textwrap
 import os
 import random
@@ -34,6 +33,7 @@ from multiprocessing import Lock
 
 from ansible import constants as C
 from ansible.errors import AnsibleError
+from ansible.utils import misc
 from ansible.utils.color import stringc
 from ansible.utils.unicode import to_bytes
 
@@ -247,7 +247,7 @@ class Display:
 
     def _set_column_width(self):
         if os.isatty(0):
-            tty_size = unpack('HHHH', fcntl.ioctl(0, TIOCGWINSZ, pack('HHHH', 0, 0, 0, 0)))[1]
+            tty_size = misc.GetConsoleDimensions().ws_col
         else:
             tty_size = 0
         self.columns = max(79, tty_size)

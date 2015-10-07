@@ -19,7 +19,7 @@ from __future__ import (absolute_import, division, print_function)
 __metaclass__ = type
 
 import gettext
-import fcntl
+#import fcntl
 import hmac
 import os
 import pipes
@@ -38,6 +38,7 @@ from hashlib import sha1
 from ansible import constants as C
 from ansible.errors import AnsibleError, AnsibleConnectionFailure, AnsibleFileNotFound
 from ansible.plugins.connections import ConnectionBase
+from ansible.utils import misc
 
 class Connection(ConnectionBase):
     ''' ssh based connections '''
