@@ -1,34 +1,104 @@
 import __builtin__,os,misc
-import win32net,win32com.client,ntsecuritycon
+import win32net,win32security,ntsecuritycon
+import win32com.client
 
 class Query:
     WmiClient = win32com.client.GetObject('WinMgmts://')
 
     @staticmethod
-    def All():
-        for account in Query.WmiClient.InstancesOf('Win32_Account'):
-            if account.SIDType == ntsecuritycon.SidTypeGroup:
-                yield account
-            continue
+    def All(servername=None):
+        result,count,resume = win32net.NetGroupEnum(servername, 2)
+        assert resume == 0 and len(result) == count, 'Unexpected resume and/or count when calling NetWkstaUserEnum'
+        for r in result:
+            try:
+                res = win32net.NetGroupGetInfo(servername,r['name'],2)
+            except:
+                res = dict(r)
+            res['logon_server'] = servername
+
+            try:
+                sid,domain,sidtype = win32security.LookupAccountName(res['logon_server'], res['name'])
+            except:
+                sid,domain,sidtype = win32security.LookupAccountName(None, res['name'])
+            res['user_sid'] = win32security.ConvertSidToStringSid(sid)
+            res['logon_domain'] = domain
+            res['type'] = sidtype
+            yield res
+
+        result,count,resume = win32net.NetLocalGroupEnum(servername, 1)
+        assert resume == 0 and len(result) == count, 'Unexpected resume and/or count when calling NetUserEnum'
+        for r in result:
+            try:
+                res = win32net.NetLocalGroupGetInfo(servername,r['name'],1)
+            except:
+                res = dict(r)
+            res['logon_server'] = servername
+
+            sid,domain,sidtype = win32security.LookupAccountName(res['logon_server'], res['name'])
+            assert sid == res.setdefault('user_sid',sid)
+
+            if sidtype == win32security.SidTypeAlias:
+                res['logon_domain'] = None if domain == 'BUILTIN' else domain
+            else:
+                res['logon_domain'] = domain
+            res['user_sid'] = win32security.ConvertSidToStringSid(res['user_sid'])
+            res['group_id'] = misc.SID.Identifier(res['user_sid'])
+            res['type'] = sidtype
+            yield res
         return
+
     @staticmethod
-    def ByName(domain,name):
-        return win32com.client.GetObject(r'WinMgmts:\\.\root\cimv2:Win32_Group.Domain="%s",Name="%s"'%(domain,name))
+    def ByName(name, servername=None):
+        try:
+            res = win32net.NetGroupGetInfo(servername,name,2)
+        except:
+            res = win32net.NetLocalGroupGetInfo(servername,name,1)
+        res['logon_server'] = servername
+
+        sid,domain,sidtype = win32security.LookupAccountName(res['logon_server'], name)
+        assert sid == res.setdefault('user_sid',sid)
+
+        if sidtype == win32security.SidTypeAlias:
+            res['logon_domain'] = None if domain == 'BUILTIN' else domain
+        else:
+            res['logon_domain'] = domain
+        res['user_sid'] = win32security.ConvertSidToStringSid(res['user_sid'])
+        res['group_id'] = misc.SID.Identifier(res['user_sid'])
+        res['type'] = sidtype
+        return res
+
     @staticmethod
     def Members(group):
-        result = Query.WmiClient.ExecQuery('Select PartComponent From Win32_GroupUser Where GroupComponent = "Win32_Group.Domain=\'%s\',Name=\'%s\'"'% (group.Domain,group.Name))
-        for index in range(0,len(result)):
-            record = result[index]
+        try:
+            result,count,resume = win32net.NetGroupGetUsers(group['logon_server'],group['name'],1)
+            assert resume == 0 and len(result) == count, 'Unexpected resume and/or count when calling NetGroupGetUsers'
+        except:
+            pass
+        else:
+            for r in result:
+                yield r
+
+        try:
             try:
-                user = win32com.client.GetObject(r'WinMgmts:%s'% record.PartComponent)
+                result,count,resume = win32net.NetLocalGroupGetMembers(group['logon_server'],group['name'],2)
+                assert resume == 0 and len(result) == count, 'Unexpected resume and/or count when calling NetGroupGetUsers'
             except:
-                # fall-back to generating a member name from the domain and user attributes
-                domain,user = record.PartComponent.split(':',1)[1].split('.',1)[1].split(',',1)
-                domain,user = (n.split('=',1)[1].replace('"','') for n in (domain,user))
-                res = r'\\'.join((domain,user))
+                result,count,resume =  win32net.NetLocalGroupGetMembers(group['logon_server'],group['name'],1)
+                for res in result:
+                    res['logon_server'] = group['logon_server']
+                    res['logon_domain'] = group['logon_domain']
             else:
-                res = user.Name
-            yield res
+                for res in result:
+                    res['login_server'] = group['logon_server']
+                    if res['domainandname'].startswith(group['logon_domain'] + '\\'):
+                        domain,name = res.pop('domainandname').split('\\',1)
+                        res['login_domain'] = domain
+                        res['name'] = name
+                    else:
+                        res['name'] = res.pop('domainandname')
+                        res['login_domain'] = group['logon_domain']
+                    yield res
+        except: pass
         return
 
 class struct_group(__builtin__.tuple):
@@ -46,21 +116,20 @@ def getgrgid(gid):
     for group in Query.All():
         if gid != misc.SID.Identifier(group.SID):
             continue
-        members = Query.Members(group)
-        return struct_group((group.Name, 'x', misc.SID.Identifier(group.SID), ','.join(members)))
+        members = (r['name'] for r in Query.Members(group))
+        return struct_group((group['name'], group.get('password','x'), misc.SID.Identifier(group['user_sid']), ','.join(members)))
     raise KeyError, gid
 
 def getgrnam(name):
-    domain = win32net.NetServerGetInfo(None, 100)['name']
     try:
-        group = Query.ByName(domain,name)
+        group = Query.ByName(name)
     except:
         raise KeyError, name
-    members = Query.Members(group)
-    return struct_group((group.Name, 'x', misc.SID.Identifier(group.SID), ','.join(members)))
+    members = (r['name'] for r in Query.Members(group))
+    return struct_group((group['name'], group.get('password','x'), misc.SID.Identifier(group['user_sid']), ','.join(members)))
 def getgrall():
     result = []
     for group in Query.All():
-        members = Query.Members(group)
-        result.append( struct_group((group.Name, 'x', misc.SID.Identifier(group.SID), ','.join(members))) )
+        members = (r['name'] for r in Query.Members(group))
+        result.append( struct_group((group['name'], group.get('password','x'), misc.SID.Identifier(group['user_sid']), ','.join(members))) )
     return result
