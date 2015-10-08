@@ -54,7 +54,8 @@ import pipes
 import shlex
 import subprocess
 import sys
-import syslog
+try:import syslog
+except ImportError:from ansible.utils import winlog as syslog
 import types
 import time
 import select
