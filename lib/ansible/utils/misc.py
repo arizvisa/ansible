@@ -1,4 +1,5 @@
-import ctypes,platform,os,itertools
+import __builtin__,os,itertools,platform
+import ctypes
 which = lambda _,envvar="PATH",extvar='PATHEXT':_ if executable(_) else iter(filter(executable,itertools.starmap(os.path.join,itertools.product(os.environ.get(envvar,os.defpath).split(os.pathsep),(_+e for e in os.environ.get(extvar,'').split(os.pathsep)))))).next() 
 
 ### Constants
@@ -78,6 +79,42 @@ class LockFile(object):
     def release(self):
         raise NotImplementedError
 
+class SID:
+    @staticmethod
+    def unpack(sid):
+        SidVersion = '-'.join(sid.split('-',2)[:2])
+        SubAuthorityCount = int(sid.split('-')[2])
+        assert SubAuthorityCount > 2, 'Invalid SID'
+        res = sid.split('-')[3:]
+        AuthorityIdentifier = int(res.pop(0))
+        #FIXME: is raymond wrong when dealing with group SIDs here?
+        #MachineId = map(res.pop, (0,)*(SubAuthorityCount-2))
+        MachineId = map(res.pop, (0,)*(len(res)-1))
+        UserId = res.pop(0)
+        assert len(res) == 0, 'Invalid SID'
+        return SidVersion,SubAuthorityCount,AuthorityIdentifier,map(int,MachineId),UserId
+    @classmethod
+    def SidVersion(cls, sid):
+        return int(cls.unpack(sid)[0].split('-',1)[1])
+    @classmethod
+    def SubAuthority(cls, sid):
+        return cls.unpack(sid)[1]
+    @classmethod
+    def AuthorityIdentifier(cls, sid):
+        return cls.unpack(sid)[2]
+    @classmethod
+    def MachineIdentifier(cls, sid):
+        # FIXME: raymond chen says that these should be endian-flipped.
+        #        It's a unique id for machines, so it only matters if we actually
+        #        compare them to another one
+        return reduce(lambda t,v: t*0x100000000+v, cls.unpack(sid)[3], long(0))
+    @classmethod
+    def Identifier(cls, sid):
+        return int(cls.unpack(sid)[4])
+
+def chdir(*args):
+    return os.chdir(*args)
+
 ### Conditional Functions
 if platform.system() == 'Windows':
     from ctypes import windll
@@ -102,11 +139,116 @@ if platform.system() == 'Windows':
             res = windll.kernel32.UnlockFileEx(handle, 0, 0, 0, 0xFFFFFFFF, ctypes.pointer(ol))
             if res == 0: raise RuntimeError, 'Unable to unlock file %s'% self.file.name
 
+    import win32com.client,win32net,win32security,ntsecuritycon
+    import winpwd
+    WmiClient = win32com.client.GetObject('WinMgmts://')
+    def getuid():
+        process = win32com.client.GetObject(r'WinMgmts:\\.\root\cimv2:Win32_Process.Handle="%s"'%str(os.getpid()))
+        return SID.Identifier(process.ExecMethod_('GetOwnerSid').Sid)
+    def geteuid():
+        process = win32com.client.GetObject(r'WinMgmts:\\.\root\cimv2:Win32_Process.Handle="%s"'%str(os.getpid()))
+        return SID.Identifier(process.ExecMethod_('GetOwnerSid').Sid)
+    def getgid():
+        process = win32com.client.GetObject(r'WinMgmts:\\.\root\cimv2:Win32_Process.Handle="%s"'%str(os.getpid()))
+        account = process.ExecMethod_('GetOwner')
+        groups = WmiClient.ExecQuery('Select GroupComponent From Win32_GroupUser Where PartComponent = "Win32_UserAccount.Domain=\'%s\',Name=\'%s\'"'% (account.Domain,account.User))
+        firstgroup = win32com.client.GetObject(r'WinMgmts:%s'% groups[0].GroupComponent)
+        return SID.Identifier(firstgroup.SID)
+
+    def chmod(path, mode):
+        # get the ugo out of the dacl
+        Everyone,_,_ = win32security.LookupAccountName("", "Everyone")
+        User = Group = None,None
+
+        sd = win32security.GetFileSecurity(path, win32security.DACL_SECURITY_INFORMATION)
+        dacl = sd.GetSecurityDescriptorDacl()
+        for index in xrange(dacl.GetAceCount()):
+            _,_,sid = dacl.GetAce(index)
+            name,domain,_ = win32security.LookupAccountSid(None,sid)
+
+            # figure out the account type
+            acct = win32com.client.GetObject(r'WinMgmts:\\.\root\cimv2:Win32_Account.Domain="%s",Name="%s"'%(domain,name))
+            if acct.SIDType == ntsecuritycon.SidTypeUser and User is None:
+                User = acct.Sid
+            if acct.SIDType == ntsecuritycon.SidTypeGroup and Group is None:
+                Group = acct.Sid
+            continue
+
+        # default to Guest
+        if User is None:
+            User,_,_ = win32security.LookupAccountName("", "Guest")
+        # find the first group associated with User
+        if Group is None:
+            name,domain,_ = win32security.LookupAccountSid(None,User)
+            acct = winpwd.Query.ByName(domain,name)
+            Group = win32security.ConvertStringSidToSid(winpwd.Query.Group(acct).Sid)
+
+        # convert mode to a shiftable list
+        res = []
+        for _ in range(8):
+            res.append(mode & 1)
+            mode >>= 1
+        mode = res
+
+        # generate ACL from list
+        flags = [ntsecuritycon.FILE_GENERIC_EXECUTE, ntsecuritycon.FILE_GENERIC_WRITE, ntsecuritycon.FILE_GENERIC_READ]
+        dacl = win32security.ACL()
+        res = 0
+        for i in xrange(3):
+            if mode.pop(0):
+                res |= flags[i]
+        dacl.AddAccessAllowedAce(win32security.ACL_REVISION, res, Everyone)
+        res = 0
+        for i in xrange(3):
+            if mode.pop(0):
+                res |= flags[i]
+        dacl.AddAccessAllowedAce(win32security.ACL_REVISION, res, Group)
+        res = 0
+        for i in xrange(3):
+            if mode.pop(0):
+                res |= flags[i]
+        dacl.AddAccessAllowedAce(win32security.ACL_REVISION, res, User)
+
+        sd.SetSecurityDescriptorDacl(1, dacl, 0)
+        res = win32security.SetFileSecurity(path, win32security.DACL_SECURITY_INFORMATION, sd)
+        return -1 if res == 0 else 0
+
+    def lchown(path,uid,gid):
+        return chown(path,uid,gid)
+
+    def chown(path, uid, gid):
+        # get the sid for the uid, and the gid
+        user = group = None
+        for acct in WmiClient.InstancesOf('Win32_Account'):
+            id = SID.Identifier(acct.SID)
+            if id == uid and acct.SidType == ntsecuritycon.SidTypeUser: user = acct.SID
+            if id == gid and acct.SidType == ntsecuritycon.SidTypeGroup: group = acct.SID
+            if uid is not None and gid is not None: break
+
+        # ripped from http://timgolden.me.uk/python/win32_how_do_i/add-security-to-a-file.html#the-short-version
+        sd = win32security.GetFileSecurity(path, win32security.OWNER_SECURITY_INFORMATION)
+
+        # grab original owner
+        if user is None and uid != -1:
+            user = sd.GetSecurityDescriptorOwner()
+        if group is None and gid != -1:
+            name,domain,_ = win32security.LookupAccountSid(None,user)
+            acct = winpwd.Query.ByName(domain,name)
+            group = win32security.ConvertStringSidToSid(winpwd.Query.Group(acct).Sid)
+
+        if uid != -1:
+            sd.SetSecurityDescriptorOwner(user, True)
+        if gid != -1:
+            sd.SetSecurityDescriptorGroup(group, True)
+
+        res = win32security.SetFileSecurity(path, win32security.OWNER_SECURITY_INFORMATION, sd)
+        return -1 if res == 0 else 0
+
 else:
     def GetConsoleDimensions():
         ws = WINSZ()
         res = fcntl.ioctl(0, termios.TIOCGWINSZ, ctypes.pointer(ws))
-        if res != 0
+        if res != 0:
             raise RuntimeError, res
         return ws
 
@@ -118,6 +260,17 @@ else:
         def release(self):
             res = fcntl.lockf(self.file, fcntl.LOCK_UN)
             if res != 0: raise RuntimeError, res
+
+    def getuid():
+        return os.getuid()
+    def geteuid():
+        return os.geteuid()
+    def getgid():
+        return os.getgid()
+    def chown(*args,**kwds):
+        return os.chown(*args, **kwds)
+    def lchown(*args,**kwds):
+        return os.lchown(*args, **kwds)
 
 ### Asynchronous process monitoring
 import sys,os,threading,weakref,subprocess,time,itertools

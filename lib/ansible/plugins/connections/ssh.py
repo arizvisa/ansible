@@ -111,7 +111,7 @@ class Connection(ConnectionBase):
             self._common_args += ("-o", "KbdInteractiveAuthentication=no",
                                  "-o", "PreferredAuthentications=gssapi-with-mic,gssapi-keyex,hostbased,publickey",
                                  "-o", "PasswordAuthentication=no")
-        if self._play_context.remote_user is not None and self._play_context.remote_user != pwd.getpwuid(os.geteuid())[0]:
+        if self._play_context.remote_user is not None and self._play_context.remote_user != pwd.getpwuid(misc.geteuid())[0]:
             self._common_args += ("-o", "User={0}".format(self._play_context.remote_user))
         self._common_args += ("-o", "ConnectTimeout={0}".format(self._play_context.timeout))
 

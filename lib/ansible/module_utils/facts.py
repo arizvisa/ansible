@@ -33,6 +33,7 @@ try:import pwd
 except ImportError:from ansible.utils import winpwd as pwd
 import ConfigParser
 import StringIO
+from ansible.utils import misc
 
 from string import maketrans
 
@@ -1093,7 +1094,7 @@ class LinuxHardware(Hardware):
     def get_lvm_facts(self):
         """ Get LVM Facts if running as root and lvm utils are available """
 
-        if os.getuid() == 0 and module.get_bin_path('vgs'):
+        if misc.getuid() == 0 and module.get_bin_path('vgs'):
             lvm_util_options = '--noheadings --nosuffix --units g'
 
             vgs_path = module.get_bin_path('vgs')

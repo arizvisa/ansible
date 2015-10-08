@@ -30,6 +30,7 @@ from six.moves import configparser
 
 from ansible.parsing.splitter import unquote
 from ansible.errors import AnsibleOptionsError
+from ansible.utils import misc
 
 # copied from utils, avoid circular reference fun :)
 def mk_boolean(value):
@@ -106,7 +107,7 @@ def shell_expand_path(path):
 
 p, CONFIG_FILE = load_config_file()
 
-active_user   = pwd.getpwuid(os.geteuid())[0]
+active_user   = pwd.getpwuid(misc.geteuid())[0]
 
 # check all of these extensions when looking for yaml files for things like
 # group variables -- really anything we can load

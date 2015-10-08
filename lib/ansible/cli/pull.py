@@ -187,13 +187,13 @@ class PullCLI(CLI):
         if self.options.limit:
             cmd += ' -l "%s"' % self.options.limit
 
-        os.chdir(self.options.dest)
+        misc.chdir(self.options.dest)
 
         # RUN THE PLAYBOOK COMMAND
         rc, out, err = run_cmd(cmd, live=True)
 
         if self.options.purge:
-            os.chdir('/')
+            misc.chdir('/')
             try:
                 shutil.rmtree(self.options.dest)
             except Exception as e:
