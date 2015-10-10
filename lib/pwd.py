@@ -1,4 +1,6 @@
-import __builtin__,os,misc
+assert __import__('os').name == 'nt', 'Module '+__name__+' was accidentally imported on a platform that is not Windows ('+__import__('os').name+').'
+
+import __builtin__
 import win32net,win32security,ntsecuritycon
 import win32com.client
 
@@ -102,7 +104,7 @@ class Query:
     @staticmethod
     def Gid(user):
         group = Query.Group(user)
-        return misc.SID.Identifier(group['user_sid'])
+        return int(group['user_sid'].rsplit('-',1)[-1])
 
     @staticmethod
     def ByName(name, *servername):
@@ -161,20 +163,20 @@ def getpwnam(name):
     except:
         raise KeyError, name
     gid,profile = Query.Gid(user),Query.Profile(user)
-    return struct_passwd((user['name'], '*' if user['password'] is None else user['password'], misc.SID.Identifier(user['user_sid']), gid, user['comment'], profile, os.environ['COMSPEC'].replace('\\', '/')))
+    return struct_passwd((user['name'], '*' if user['password'] is None else user['password'], int(user['user_sid'].rsplit('-',1)[-1]), gid, user['comment'], profile, os.environ['COMSPEC'].replace('\\', '/')))
 
 def getpwuid(uid):
     for user in Query.All():
-        if uid != misc.SID.Identifier(user['user_sid']):
+        if uid != int(user['user_sid'].rsplit('-',1)[-1]):
             continue
         gid,profile = Query.Gid(user),Query.Profile(user)
-        return struct_passwd((user['name'], '*' if user['password'] is None else user['password'], misc.SID.Identifier(user['user_sid']), gid, user['comment'], profile, os.environ['COMSPEC'].replace('\\', '/')))
+        return struct_passwd((user['name'], '*' if user['password'] is None else user['password'], int(user['user_sid'].rsplit('-',1)[-1]), gid, user['comment'], profile, os.environ['COMSPEC'].replace('\\', '/')))
     raise KeyError, uid
 
 def getpwall():
     result = []
     for user in Query.All():
         gid,profile = Query.Gid(user),Query.Profile(user)
-        result.append( struct_passwd((user['name'], '*' if user['password'] is None else user['password'], misc.SID.Identifier(user['user_sid']), gid, user['comment'], profile, os.environ['COMSPEC'].replace('\\', '/'))))
+        result.append( struct_passwd((user['name'], '*' if user['password'] is None else user['password'], int(user['user_sid'].rsplit('-',1)[-1]), gid, user['comment'], profile, os.environ['COMSPEC'].replace('\\', '/'))))
     return result
 

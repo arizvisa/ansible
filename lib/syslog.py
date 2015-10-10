@@ -1,4 +1,7 @@
-import sys,logging,logging.handlers,os,platform
+assert __import__('os').name == 'nt', 'Module '+__name__+' was accidentally imported on a platform that is not Windows ('+__import__('os').name+').'
+
+import os,sys
+import logging,logging.handlers
 
 ## Globals
 Logger = logging.getLogger()
@@ -116,7 +119,7 @@ def openlog(ident=sys.argv[0], logoption=LOG_PERROR, facility=LOG_USER):
     else:
         formatter = logging.Formatter('%(asctime)s %(hostname)s %(facility)s: pid[%(pid)]:%(name)s:%(levelname)s:%(message)s')
 
-    if platform.system() == 'Windows':
+    if os.name == 'nt':
         h = NTEventLogHandler()
     else:
         h = SysLogHandler(facility=facilitiy)

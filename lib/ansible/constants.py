@@ -20,8 +20,7 @@ from __future__ import (absolute_import, division)
 __metaclass__ = type
 
 import os
-try:import pwd
-except ImportError:from ansible.utils import winpwd as pwd
+import pwd
 import sys
 from string import ascii_letters, digits
 

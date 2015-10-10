@@ -29,8 +29,7 @@ import socket
 import struct
 import datetime
 import getpass
-try:import pwd
-except ImportError:from ansible.utils import winpwd as pwd
+import pwd
 import ConfigParser
 import StringIO
 from ansible.utils import misc

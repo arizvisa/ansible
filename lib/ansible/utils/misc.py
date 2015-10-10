@@ -1,4 +1,4 @@
-import __builtin__,os,itertools,platform
+import __builtin__,os,itertools
 import ctypes
 which = lambda _,envvar="PATH",extvar='PATHEXT':_ if executable(_) else iter(filter(executable,itertools.starmap(os.path.join,itertools.product(os.environ.get(envvar,os.defpath).split(os.pathsep),(_+e for e in os.environ.get(extvar,'').split(os.pathsep)))))).next() 
 
@@ -116,7 +116,7 @@ def chdir(*args):
     return os.chdir(*args)
 
 ### Conditional Functions
-if platform.system() == 'Windows':
+if os.name == 'nt':
     from ctypes import windll
     def GetConsoleDimensions():
         h = windll.kernel32.GetStdHandle(STD_ERROR_HANDLE)
@@ -140,7 +140,7 @@ if platform.system() == 'Windows':
             if res == 0: raise RuntimeError, 'Unable to unlock file %s'% self.file.name
 
     import win32com.client,win32net,win32security,ntsecuritycon
-    import winpwd
+    import pwd  # this should be importing the pwd wrapper
     WmiClient = win32com.client.GetObject('WinMgmts://')
     def getuid():
         process = win32com.client.GetObject(r'WinMgmts:\\.\root\cimv2:Win32_Process.Handle="%s"'%str(os.getpid()))
@@ -180,8 +180,8 @@ if platform.system() == 'Windows':
         # find the first group associated with User
         if Group is None:
             name,domain,_ = win32security.LookupAccountSid(None,User)
-            acct = winpwd.Query.ByName(domain,name)
-            Group = win32security.ConvertStringSidToSid(winpwd.Query.Group(acct).Sid)
+            acct = pwd.Query.ByName(domain,name)
+            Group = win32security.ConvertStringSidToSid(pwd.Query.Group(acct).Sid)
 
         # convert mode to a shiftable list
         res = []
@@ -233,8 +233,8 @@ if platform.system() == 'Windows':
             user = sd.GetSecurityDescriptorOwner()
         if group is None and gid != -1:
             name,domain,_ = win32security.LookupAccountSid(None,user)
-            acct = winpwd.Query.ByName(domain,name)
-            group = win32security.ConvertStringSidToSid(winpwd.Query.Group(acct).Sid)
+            acct = pwd.Query.ByName(domain,name)
+            group = win32security.ConvertStringSidToSid(pwd.Query.Group(acct).Sid)
 
         if uid != -1:
             sd.SetSecurityDescriptorOwner(user, True)

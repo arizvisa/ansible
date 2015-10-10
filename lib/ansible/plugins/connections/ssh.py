@@ -23,8 +23,7 @@ import hmac
 import os
 import pipes
 import pty
-try:import pwd
-except ImportError:from ansible.utils import winpwd as pwd
+import pwd
 import random
 import re
 import select

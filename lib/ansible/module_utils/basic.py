@@ -54,8 +54,7 @@ import pipes
 import shlex
 import subprocess
 import sys
-try:import syslog
-except ImportError:from ansible.utils import winlog as syslog
+import syslog
 import types
 import time
 import select
@@ -63,10 +62,8 @@ import shutil
 import stat
 import tempfile
 import traceback
-try:import grp
-except ImportError:from ansible.utils import wingrp as grp
-try:import pwd
-except ImportError:from ansible.utils import winpwd as pwd
+import grp
+import pwd
 import platform
 import errno
 from itertools import imap, repeat

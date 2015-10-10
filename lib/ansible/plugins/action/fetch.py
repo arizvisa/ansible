@@ -18,8 +18,7 @@ from __future__ import (absolute_import, division, print_function)
 __metaclass__ = type
 
 import os
-try:import pwd
-except ImportError:from ansible.utils import winpwd as pwd
+import pwd
 import random
 import traceback
 import tempfile

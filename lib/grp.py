@@ -1,4 +1,6 @@
-import __builtin__,os,misc
+assert __import__('os').name == 'nt', 'Module '+__name__+' was accidentally imported on a platform that is not Windows ('+__import__('os').name+').'
+
+import __builtin__
 import win32net,win32security,ntsecuritycon
 import win32com.client
 
@@ -42,7 +44,7 @@ class Query:
             else:
                 res['logon_domain'] = domain
             res['user_sid'] = win32security.ConvertSidToStringSid(res['user_sid'])
-            res['group_id'] = misc.SID.Identifier(res['user_sid'])
+            res['group_id'] = int(res['user_sid'].rsplit('-',1)[-1])
             res['type'] = sidtype
             yield res
         return
@@ -63,7 +65,7 @@ class Query:
         else:
             res['logon_domain'] = domain
         res['user_sid'] = win32security.ConvertSidToStringSid(res['user_sid'])
-        res['group_id'] = misc.SID.Identifier(res['user_sid'])
+        res['group_id'] = int(res['user_sid'].rsplit('-',1)[-1])
         res['type'] = sidtype
         return res
 
@@ -114,10 +116,10 @@ class struct_group(__builtin__.tuple):
 
 def getgrgid(gid):
     for group in Query.All():
-        if gid != misc.SID.Identifier(group.SID):
+        if gid != int(group.SID.rsplit('-',1)[-1]):
             continue
         members = (r['name'] for r in Query.Members(group))
-        return struct_group((group['name'], group.get('password','x'), misc.SID.Identifier(group['user_sid']), ','.join(members)))
+        return struct_group((group['name'], group.get('password','x'), int(group['user_sid'].rsplit('-',1)[-1]), ','.join(members)))
     raise KeyError, gid
 
 def getgrnam(name):
@@ -126,10 +128,10 @@ def getgrnam(name):
     except:
         raise KeyError, name
     members = (r['name'] for r in Query.Members(group))
-    return struct_group((group['name'], group.get('password','x'), misc.SID.Identifier(group['user_sid']), ','.join(members)))
+    return struct_group((group['name'], group.get('password','x'), int(group['user_sid'].rsplit('-',1)[-1]), ','.join(members)))
 def getgrall():
     result = []
     for group in Query.All():
         members = (r['name'] for r in Query.Members(group))
-        result.append( struct_group((group['name'], group.get('password','x'), misc.SID.Identifier(group['user_sid']), ','.join(members))) )
+        result.append( struct_group((group['name'], group.get('password','x'), int(group['user_sid'].rsplit('-',1)[-1]), ','.join(members))) )
     return result
