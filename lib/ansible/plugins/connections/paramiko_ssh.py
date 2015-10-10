@@ -26,6 +26,7 @@ __metaclass__ = type
 
 import warnings
 import os
+import portable
 import pipes
 import socket
 import random
@@ -42,7 +43,6 @@ from ansible import constants as C
 from ansible.errors import AnsibleError, AnsibleConnectionFailure, AnsibleFileNotFound
 from ansible.plugins.connections import ConnectionBase
 from ansible.utils.path import makedirs_safe
-from ansible.utils import misc
 
 AUTHENTICITY_MSG="""
 paramiko: The authenticity of host '%s' can't be established.
@@ -369,7 +369,7 @@ class Connection(ConnectionBase):
             dirname = os.path.dirname(self.keyfile)
             makedirs_safe(dirname)
 
-            KEY_LOCK = misc.LockFile(lockfile, 'w')
+            KEY_LOCK = portable.LockFile(lockfile, 'w')
             KEY_LOCK.acquire()
 
             try:
@@ -389,8 +389,8 @@ class Connection(ConnectionBase):
                 # the file will be moved into place rather than cleaned up.
 
                 tmp_keyfile = tempfile.NamedTemporaryFile(dir=key_dir, delete=False)
-                misc.chmod(tmp_keyfile.name, key_stat.st_mode & 0o7777)
-                misc.chown(tmp_keyfile.name, key_stat.st_uid, key_stat.st_gid)
+                os.chmod(tmp_keyfile.name, key_stat.st_mode & 0o7777)
+                os.chown(tmp_keyfile.name, key_stat.st_uid, key_stat.st_gid)
 
                 self._save_ssh_host_keys(tmp_keyfile.name)
                 tmp_keyfile.close()

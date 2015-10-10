@@ -49,6 +49,7 @@ SELINUX_SPECIAL_FS="<<SELINUX_SPECIAL_FILESYSTEMS>>"
 
 import locale
 import os
+import portable
 import re
 import pipes
 import shlex
@@ -67,7 +68,6 @@ import pwd
 import platform
 import errno
 from itertools import imap, repeat
-from ansible.utils import misc
 
 try:
     import json
@@ -631,7 +631,7 @@ class AnsibleModule(object):
             if self.check_mode:
                 return True
             try:
-                misc.lchown(path, uid, -1)
+                os.lchown(path, uid, -1)
             except OSError:
                 self.fail_json(path=path, msg='chown failed')
             changed = True
@@ -653,7 +653,7 @@ class AnsibleModule(object):
             if self.check_mode:
                 return True
             try:
-                misc.lchown(path, -1, gid)
+                os.lchown(path, -1, gid)
             except OSError:
                 self.fail_json(path=path, msg='chgrp failed')
             changed = True
@@ -689,16 +689,16 @@ class AnsibleModule(object):
                     os.lchmod(path, mode)
                 else:
                     if not os.path.islink(path):
-                        misc.chmod(path, mode)
+                        os.chmod(path, mode)
                     else:
                         # Attempt to set the perms of the symlink but be
                         # careful not to change the perms of the underlying
                         # file while trying
                         underlying_stat = os.stat(path)
-                        misc.chmod(path, mode)
+                        os.chmod(path, mode)
                         new_underlying_stat = os.stat(path)
                         if underlying_stat.st_mode != new_underlying_stat.st_mode:
-                            misc.chmod(path, stat.S_IMODE(underlying_stat.st_mode))
+                            os.chmod(path, stat.S_IMODE(underlying_stat.st_mode))
             except OSError, e:
                 if os.path.islink(path) and e.errno == errno.EPERM:  # Can't set mode on symbolic links
                     pass
@@ -1245,7 +1245,7 @@ class AnsibleModule(object):
             for cwd in [os.path.expandvars('$HOME'), tempfile.gettempdir()]:
                 try:
                     if os.access(cwd, os.F_OK|os.R_OK):
-                        misc.chdir(cwd)
+                        os.chdir(cwd)
                         return cwd
                 except:
                     pass
@@ -1425,8 +1425,8 @@ class AnsibleModule(object):
         if os.path.exists(dest):
             try:
                 dest_stat = os.stat(dest)
-                misc.chmod(src, dest_stat.st_mode & 07777)
-                misc.chown(src, dest_stat.st_uid, dest_stat.st_gid)
+                os.chmod(src, dest_stat.st_mode & 07777)
+                os.chown(src, dest_stat.st_uid, dest_stat.st_gid)
             except OSError, e:
                 if e.errno != errno.EPERM:
                     raise
@@ -1448,7 +1448,7 @@ class AnsibleModule(object):
         # if the original login_name doesn't match the currently
         # logged-in user, or if the SUDO_USER environment variable
         # is set, then this user has switched their credentials
-        switched_user = login_name and login_name != pwd.getpwuid(misc.getuid())[0] or os.environ.get('SUDO_USER')
+        switched_user = login_name and login_name != pwd.getpwuid(os.getuid())[0] or os.environ.get('SUDO_USER')
 
         try:
             # Optimistically try a rename, solves some corner cases and can avoid useless work, throws exception if not atomic.
@@ -1468,7 +1468,7 @@ class AnsibleModule(object):
                 self.fail_json(msg='The destination directory (%s) is not writable by the current user.' % dest_dir)
 
             try: # leaves tmp file behind when sudo and  not root
-                if switched_user and misc.getuid() != 0:
+                if switched_user and os.getuid() != 0:
                     # cleanup will happen by 'rm' of tempdir
                     # copy2 will preserve some metadata
                     shutil.copy2(src, tmp_dest.name)
@@ -1480,7 +1480,7 @@ class AnsibleModule(object):
                 try:
                     tmp_stat = os.stat(tmp_dest.name)
                     if dest_stat and (tmp_stat.st_uid != dest_stat.st_uid or tmp_stat.st_gid != dest_stat.st_gid):
-                        misc.chown(tmp_dest.name, dest_stat.st_uid, dest_stat.st_gid)
+                        os.chown(tmp_dest.name, dest_stat.st_uid, dest_stat.st_gid)
                 except OSError, e:
                     if e.errno != errno.EPERM:
                         raise
@@ -1494,9 +1494,9 @@ class AnsibleModule(object):
             # based on the current value of umask
             umask = os.umask(0)
             os.umask(umask)
-            misc.chmod(dest, 0666 & ~umask)
+            os.chmod(dest, 0666 & ~umask)
             if switched_user:
-                misc.chown(dest, misc.getuid(), misc.getgid())
+                os.chown(dest, os.getuid(), os.getgid())
 
         if self.selinux_enabled():
             # rename might not preserve context
@@ -1609,7 +1609,7 @@ class AnsibleModule(object):
         # make sure we're in the right working directory
         if cwd and os.path.isdir(cwd):
             try:
-                misc.chdir(cwd)
+                os.chdir(cwd)
             except (OSError, IOError), e:
                 self.fail_json(rc=e.errno, msg="Could not open %s, %s" % (cwd, str(e)))
 
@@ -1673,7 +1673,7 @@ class AnsibleModule(object):
             self.fail_json(cmd=clean_args, rc=rc, stdout=stdout, stderr=stderr, msg=msg)
 
         # reset the pwd
-        misc.chdir(prev_dir)
+        os.chdir(prev_dir)
 
         return (rc, stdout, stderr)
 

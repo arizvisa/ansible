@@ -21,6 +21,7 @@ __metaclass__ = type
 
 import textwrap
 import os
+import portable
 import random
 import subprocess
 import sys
@@ -32,7 +33,6 @@ from multiprocessing import Lock
 
 from ansible import constants as C
 from ansible.errors import AnsibleError
-from ansible.utils import misc
 from ansible.utils.color import stringc
 from ansible.utils.unicode import to_bytes
 
@@ -246,7 +246,7 @@ class Display:
 
     def _set_column_width(self):
         if os.isatty(0):
-            tty_size = misc.GetConsoleDimensions().ws_col
+            tty_size = portable.GetConsoleDimensions().ws_col
         else:
             tty_size = 0
         self.columns = max(79, tty_size)

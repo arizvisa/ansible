@@ -23,6 +23,7 @@ setup(name='ansible',
       install_requires=['paramiko', 'jinja2', "PyYAML", 'setuptools', 'pycrypto >= 2.6', 'six'],
       package_dir={ '': 'lib' },
       packages=find_packages('lib'),
+      py_modules=['pwd','grp','syslog','portable'],
       package_data={
          '': ['module_utils/*.ps1', 'modules/core/windows/*.ps1', 'modules/extras/windows/*.ps1'],
       },

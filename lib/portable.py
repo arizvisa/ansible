@@ -1,4 +1,4 @@
-import __builtin__,os,itertools
+import __builtin__,sys,os,itertools
 import ctypes
 which = lambda _,envvar="PATH",extvar='PATHEXT':_ if executable(_) else iter(filter(executable,itertools.starmap(os.path.join,itertools.product(os.environ.get(envvar,os.defpath).split(os.pathsep),(_+e for e in os.environ.get(extvar,'').split(os.pathsep)))))).next() 
 
@@ -145,15 +145,18 @@ if os.name == 'nt':
     def getuid():
         process = win32com.client.GetObject(r'WinMgmts:\\.\root\cimv2:Win32_Process.Handle="%s"'%str(os.getpid()))
         return SID.Identifier(process.ExecMethod_('GetOwnerSid').Sid)
+    sys.modules['os'].getuid = getuid
     def geteuid():
         process = win32com.client.GetObject(r'WinMgmts:\\.\root\cimv2:Win32_Process.Handle="%s"'%str(os.getpid()))
         return SID.Identifier(process.ExecMethod_('GetOwnerSid').Sid)
+    sys.modules['os'].geteuid = geteuid
     def getgid():
         process = win32com.client.GetObject(r'WinMgmts:\\.\root\cimv2:Win32_Process.Handle="%s"'%str(os.getpid()))
         account = process.ExecMethod_('GetOwner')
         groups = WmiClient.ExecQuery('Select GroupComponent From Win32_GroupUser Where PartComponent = "Win32_UserAccount.Domain=\'%s\',Name=\'%s\'"'% (account.Domain,account.User))
         firstgroup = win32com.client.GetObject(r'WinMgmts:%s'% groups[0].GroupComponent)
         return SID.Identifier(firstgroup.SID)
+    sys.modules['os'].getgid = getgid
 
     def chmod(path, mode):
         # get the ugo out of the dacl
@@ -212,9 +215,11 @@ if os.name == 'nt':
         sd.SetSecurityDescriptorDacl(1, dacl, 0)
         res = win32security.SetFileSecurity(path, win32security.DACL_SECURITY_INFORMATION, sd)
         return -1 if res == 0 else 0
+    sys.modules['os'].chmod = chmod
 
     def lchown(path,uid,gid):
         return chown(path,uid,gid)
+    sys.modules['os'].lchown = lchown
 
     def chown(path, uid, gid):
         # get the sid for the uid, and the gid
@@ -243,6 +248,7 @@ if os.name == 'nt':
 
         res = win32security.SetFileSecurity(path, win32security.OWNER_SECURITY_INFORMATION, sd)
         return -1 if res == 0 else 0
+    sys.modules['os'].chown = chown
 
 else:
     def GetConsoleDimensions():

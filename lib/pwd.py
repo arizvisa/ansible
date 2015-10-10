@@ -1,6 +1,6 @@
 assert __import__('os').name == 'nt', 'Module '+__name__+' was accidentally imported on a platform that is not Windows ('+__import__('os').name+').'
 
-import __builtin__
+import __builtin__,os
 import win32net,win32security,ntsecuritycon
 import win32com.client
 

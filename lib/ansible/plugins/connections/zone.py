@@ -24,13 +24,13 @@ __metaclass__ = type
 import distutils.spawn
 import traceback
 import os
+import portable
 import shlex
 import subprocess
 from ansible import errors
 from ansible.utils.unicode import to_bytes
 from ansible.callbacks import vvv
 import ansible.constants as C
-from ansible.utils import misc
 
 BUFSIZE = 65536
 
@@ -77,7 +77,7 @@ class Connection(object):
         self.has_pipelining = False
         self.become_methods_supported=C.BECOME_METHODS
 
-        if misc.geteuid() != 0:
+        if os.geteuid() != 0:
             raise errors.AnsibleError("zone connection requires running as root")
 
         self.zoneadm_cmd = self._search_executable('zoneadm')

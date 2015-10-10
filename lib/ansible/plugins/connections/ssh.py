@@ -21,6 +21,7 @@ __metaclass__ = type
 import gettext
 import hmac
 import os
+import portable
 import pipes
 import pty
 import pwd
@@ -36,7 +37,6 @@ from hashlib import sha1
 from ansible import constants as C
 from ansible.errors import AnsibleError, AnsibleConnectionFailure, AnsibleFileNotFound
 from ansible.plugins.connections import ConnectionBase
-from ansible.utils import misc
 
 class Connection(ConnectionBase):
     ''' ssh based connections '''
@@ -110,7 +110,7 @@ class Connection(ConnectionBase):
             self._common_args += ("-o", "KbdInteractiveAuthentication=no",
                                  "-o", "PreferredAuthentications=gssapi-with-mic,gssapi-keyex,hostbased,publickey",
                                  "-o", "PasswordAuthentication=no")
-        if self._play_context.remote_user is not None and self._play_context.remote_user != pwd.getpwuid(misc.geteuid())[0]:
+        if self._play_context.remote_user is not None and self._play_context.remote_user != pwd.getpwuid(os.geteuid())[0]:
             self._common_args += ("-o", "User={0}".format(self._play_context.remote_user))
         self._common_args += ("-o", "ConnectTimeout={0}".format(self._play_context.timeout))
 

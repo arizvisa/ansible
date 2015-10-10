@@ -20,10 +20,10 @@ import time
 import ansible
 from ansible.errors import AnsibleError, AnsibleConnectionFailure, AnsibleFileNotFound
 from ansible.plugins.connections import ConnectionBase
-from ansible.utils import misc
+import portable
 
 Executables = {
-    'plink' : misc.which('plink'),
+    'plink' : portable.which('plink'),
 }
 
 class Connection(ConnectionBase):
@@ -85,7 +85,7 @@ class Connection(ConnectionBase):
 
         # is it putty, or is it ansible...
         if not ansible.constant.HOST_KEY_CHECKING:
-            p = misc.spawn(check, '{:s} nobody@{:s} exit'.format(Executable['plink'], self._play_context.remote_addr)
+            p = portable.spawn(check, '{:s} nobody@{:s} exit'.format(Executable['plink'], self._play_context.remote_addr)
             tick = tock = time.time()
             while not done and p.running and tock-tick < self._play_context.timeout:
                 tock = time.time()
@@ -163,7 +163,7 @@ class Connection(ConnectionBase):
         # FIXME: handle this the way that ansible is supposed to handle it
         self._display.vvv("ESTABLISH SSH CONNECTION FOR USER: {0}".format(self._play_context.remote_user), host=self._play_context.remote_addr)
         command = self._get_command(Executable['plink']) + ' ' + cmd.replace('"', '\\"')
-        P = misc.spawn(_monitor_command(), command, stderr=_monitor_output())
+        P = portable.spawn(_monitor_command(), command, stderr=_monitor_output())
         returncode = P.wait()
         assert not p.running:
         stdout,stderr = ''.join(Output),''.join(Error)
@@ -185,7 +185,7 @@ class Connection(ConnectionBase):
 
         self._display.vvv("PUT {0} TO {1}".format(in_path, out_path), host=self.host)
         command = self._get_command(Executable['psftp'])
-        p = misc.spawn(_monitor_psftp(p.write), command)
+        p = portable.spawn(_monitor_psftp(p.write), command)
         returncode = p.wait()
         assert not p.running
 
@@ -209,7 +209,7 @@ class Connection(ConnectionBase):
 
         self._display.vvv("FETCH {0} TO {1}".format(in_path, out_path), host=self.host)
         command = self._get_command(Executable['psftp'])
-        p = misc.spawn(_monitor_psftp(p.write), command)
+        p = portable.spawn(_monitor_psftp(p.write), command)
         returncode = p.wait()
         assert not p.running
 

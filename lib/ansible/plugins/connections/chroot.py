@@ -21,6 +21,7 @@ __metaclass__ = type
 
 import distutils.spawn
 import os
+import portable
 import shlex
 import subprocess
 import traceback
@@ -30,7 +31,6 @@ from ansible.errors import AnsibleError
 from ansible.plugins.connections import ConnectionBase
 from ansible.utils.path import is_executable
 from ansible.utils.unicode import to_bytes
-from ansible.utils import misc
 
 class Connection(ConnectionBase):
     ''' Local chroot based connections '''
@@ -44,7 +44,7 @@ class Connection(ConnectionBase):
 
         self.chroot = self._play_context.remote_addr
 
-        if misc.geteuid() != 0:
+        if os.geteuid() != 0:
             raise AnsibleError("chroot connection requires running as root")
 
         # we're running as root on the local system so do some

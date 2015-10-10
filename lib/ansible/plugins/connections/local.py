@@ -20,6 +20,7 @@ __metaclass__ = type
 
 import traceback
 import os
+import portable
 import shutil
 import subprocess
 import time
@@ -28,7 +29,6 @@ import ansible.constants as C
 
 from ansible.errors import AnsibleError, AnsibleFileNotFound
 from ansible.plugins.connections import ConnectionBase
-from ansible.utils import misc
 
 class Connection(ConnectionBase):
     ''' Local based connections '''
@@ -71,9 +71,9 @@ class Connection(ConnectionBase):
 
 #        # FIXME: cwd= needs to be set to the basedir of the playbook
         become_output,become_error = '',''
-        self._display.debug("opening command with misc.spawn()")
-        p = misc.spawn(process_output, cmd, shell=isinstance(cmd,basestring))
-        self._display.debug("done running command with misc.spawn()")
+        self._display.debug("opening command with portable.spawn()")
+        p = portable.spawn(process_output, cmd, shell=isinstance(cmd,basestring))
+        self._display.debug("done running command with portable.spawn()")
 
         if self._play_context.prompt and self._play_context.become_pass and sudoable:
             tick = tock = time.now()
