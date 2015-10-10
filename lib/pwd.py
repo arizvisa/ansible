@@ -163,20 +163,20 @@ def getpwnam(name):
     except:
         raise KeyError, name
     gid,profile = Query.Gid(user),Query.Profile(user)
-    return struct_passwd((user['name'], '*' if user['password'] is None else user['password'], int(user['user_sid'].rsplit('-',1)[-1]), gid, user['comment'], profile, os.environ['COMSPEC'].replace('\\', '/')))
+    return struct_passwd((user['name'], '*' if user.get('password',None) is None else user['password'], int(user['user_sid'].rsplit('-',1)[-1]), gid, user.get('comment',''), profile, os.environ['COMSPEC'].replace('\\', '/')))
 
 def getpwuid(uid):
     for user in Query.All():
         if uid != int(user['user_sid'].rsplit('-',1)[-1]):
             continue
         gid,profile = Query.Gid(user),Query.Profile(user)
-        return struct_passwd((user['name'], '*' if user['password'] is None else user['password'], int(user['user_sid'].rsplit('-',1)[-1]), gid, user['comment'], profile, os.environ['COMSPEC'].replace('\\', '/')))
+        return struct_passwd((user['name'], '*' if user.get('password',None) is None else user['password'], int(user['user_sid'].rsplit('-',1)[-1]), gid, user.get('comment',''), profile, os.environ['COMSPEC'].replace('\\', '/')))
     raise KeyError, uid
 
 def getpwall():
     result = []
     for user in Query.All():
         gid,profile = Query.Gid(user),Query.Profile(user)
-        result.append( struct_passwd((user['name'], '*' if user['password'] is None else user['password'], int(user['user_sid'].rsplit('-',1)[-1]), gid, user['comment'], profile, os.environ['COMSPEC'].replace('\\', '/'))))
+        result.append( struct_passwd((user['name'], '*' if user.get('password',None) is None else user['password'], int(user['user_sid'].rsplit('-',1)[-1]), gid, user.get('comment',''), profile, os.environ['COMSPEC'].replace('\\', '/'))))
     return result
 
