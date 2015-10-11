@@ -34,6 +34,8 @@ from ansible.playbook.role import hash_params
 from ansible.plugins import _basedirs, action_loader, connection_loader, filter_loader, lookup_loader, module_loader
 from ansible.template import Templar
 
+import gevent
+
 try:
     from __main__ import display
 except ImportError:
@@ -162,117 +164,113 @@ class StrategyBase:
         '''
 
         ret_results = []
-
+        gevent.idle()
         while not self._final_q.empty() and not self._tqm._terminated:
-            try:
-                result = self._final_q.get(block=False)
-                self._display.debug("got result from result worker: %s" % ([unicode(x) for x in result],))
+            result = self._final_q.get()
 
-                # all host status messages contain 2 entries: (msg, task_result)
-                if result[0] in ('host_task_ok', 'host_task_failed', 'host_task_skipped', 'host_unreachable'):
-                    task_result = result[1]
-                    host = task_result._host
-                    task = task_result._task
-                    if result[0] == 'host_task_failed' or task_result.is_failed():
-                        if not task.ignore_errors:
-                            self._display.debug("marking %s as failed" % host.name)
-                            iterator.mark_host_failed(host)
-                            self._tqm._failed_hosts[host.name] = True
-                            self._tqm._stats.increment('failures', host.name)
-                        else:
-                            self._tqm._stats.increment('ok', host.name)
-                        self._tqm.send_callback('v2_runner_on_failed', task_result, ignore_errors=task.ignore_errors)
-                    elif result[0] == 'host_unreachable':
-                        self._tqm._unreachable_hosts[host.name] = True
-                        self._tqm._stats.increment('dark', host.name)
-                        self._tqm.send_callback('v2_runner_on_unreachable', task_result)
-                    elif result[0] == 'host_task_skipped':
-                        self._tqm._stats.increment('skipped', host.name)
-                        self._tqm.send_callback('v2_runner_on_skipped', task_result)
-                    elif result[0] == 'host_task_ok':
-                        self._tqm._stats.increment('ok', host.name)
-                        if 'changed' in task_result._result and task_result._result['changed']:
-                            self._tqm._stats.increment('changed', host.name)
-                        self._tqm.send_callback('v2_runner_on_ok', task_result)
-
-                        if self._diff and 'diff' in task_result._result:
-                            self._tqm.send_callback('v2_on_file_diff', task_result)
-
-                    self._pending_results -= 1
-                    if host.name in self._blocked_hosts:
-                        del self._blocked_hosts[host.name]
-
-                    # If this is a role task, mark the parent role as being run (if
-                    # the task was ok or failed, but not skipped or unreachable)
-                    if task_result._task._role is not None and result[0] in ('host_task_ok', 'host_task_failed'):
-                        # lookup the role in the ROLE_CACHE to make sure we're dealing
-                        # with the correct object and mark it as executed
-                        for (entry, role_obj) in iterator._play.ROLE_CACHE[task_result._task._role._role_name].iteritems():
-                            if role_obj._uuid == task_result._task._role._uuid:
-                                role_obj._had_task_run[host.name] = True
-
-                    ret_results.append(task_result)
-
-                elif result[0] == 'add_host':
-                    task_result = result[1]
-                    new_host_info = task_result.get('add_host', dict())
-
-                    self._add_host(new_host_info)
-
-                elif result[0] == 'add_group':
-                    task        = result[1]
-                    self._add_group(task, iterator)
-
-                elif result[0] == 'notify_handler':
-                    task_result  = result[1]
-                    handler_name = result[2]
-
-                    original_task = iterator.get_original_task(task_result._host, task_result._task)
-                    if handler_name not in self._notified_handlers:
-                        self._notified_handlers[handler_name] = []
-
-                    if task_result._host not in self._notified_handlers[handler_name]:
-                        self._notified_handlers[handler_name].append(task_result._host)
-
-                elif result[0] == 'register_host_var':
-                    # essentially the same as 'set_host_var' below, however we
-                    # never follow the delegate_to value for registered vars
-                    host      = result[1]
-                    var_name  = result[2]
-                    var_value = result[3]
-                    self._variable_manager.set_host_variable(host, var_name, var_value)
-
-                elif result[0] in ('set_host_var', 'set_host_facts'):
-                    host = result[1]
-                    task = result[2]
-                    item = result[3]
-
-                    if task.delegate_to is not None:
-                        task_vars = self._variable_manager.get_vars(loader=self._loader, play=iterator._play, host=host, task=task)
-                        task_vars = self.add_tqm_variables(task_vars, play=iterator._play)
-                        if item is not None:
-                            task_vars['item'] = item
-                        templar = Templar(loader=self._loader, variables=task_vars)
-                        host_name = templar.template(task.delegate_to)
-                        target_host = self._inventory.get_host(host_name)
-                        if target_host is None:
-                            target_host = Host(name=host_name)
+            # all host status messages contain 2 entries: (msg, task_result)
+            if result[0] in ('host_task_ok', 'host_task_failed', 'host_task_skipped', 'host_unreachable'):
+                task_result = result[1]
+                host = task_result._host
+                task = task_result._task
+                if result[0] == 'host_task_failed' or task_result.is_failed():
+                    if not task.ignore_errors:
+                        self._display.debug("marking %s as failed" % host.name)
+                        iterator.mark_host_failed(host)
+                        self._tqm._failed_hosts[host.name] = True
+                        self._tqm._stats.increment('failures', host.name)
                     else:
-                        target_host = host
+                        self._tqm._stats.increment('ok', host.name)
+                    self._tqm.send_callback('v2_runner_on_failed', task_result, ignore_errors=task.ignore_errors)
+                elif result[0] == 'host_unreachable':
+                    self._tqm._unreachable_hosts[host.name] = True
+                    self._tqm._stats.increment('dark', host.name)
+                    self._tqm.send_callback('v2_runner_on_unreachable', task_result)
+                elif result[0] == 'host_task_skipped':
+                    self._tqm._stats.increment('skipped', host.name)
+                    self._tqm.send_callback('v2_runner_on_skipped', task_result)
+                elif result[0] == 'host_task_ok':
+                    self._tqm._stats.increment('ok', host.name)
+                    if 'changed' in task_result._result and task_result._result['changed']:
+                        self._tqm._stats.increment('changed', host.name)
+                    self._tqm.send_callback('v2_runner_on_ok', task_result)
 
-                    if result[0] == 'set_host_var':
-                        var_name  = result[4]
-                        var_value = result[5]
-                        self._variable_manager.set_host_variable(target_host, var_name, var_value)
-                    elif result[0] == 'set_host_facts':
-                        facts = result[4]
-                        self._variable_manager.set_host_facts(target_host, facts)
+                    if self._diff and 'diff' in task_result._result:
+                        self._tqm.send_callback('v2_on_file_diff', task_result)
 
+                self._pending_results -= 1
+                if host.name in self._blocked_hosts:
+                    del self._blocked_hosts[host.name]
+
+                # If this is a role task, mark the parent role as being run (if
+                # the task was ok or failed, but not skipped or unreachable)
+                if task_result._task._role is not None and result[0] in ('host_task_ok', 'host_task_failed'):
+                    # lookup the role in the ROLE_CACHE to make sure we're dealing
+                    # with the correct object and mark it as executed
+                    for (entry, role_obj) in iterator._play.ROLE_CACHE[task_result._task._role._role_name].iteritems():
+                        if role_obj._uuid == task_result._task._role._uuid:
+                            role_obj._had_task_run[host.name] = True
+
+                ret_results.append(task_result)
+
+            elif result[0] == 'add_host':
+                task_result = result[1]
+                new_host_info = task_result.get('add_host', dict())
+
+                self._add_host(new_host_info)
+
+            elif result[0] == 'add_group':
+                task        = result[1]
+                self._add_group(task, iterator)
+
+            elif result[0] == 'notify_handler':
+                task_result  = result[1]
+                handler_name = result[2]
+
+                original_task = iterator.get_original_task(task_result._host, task_result._task)
+                if handler_name not in self._notified_handlers:
+                    self._notified_handlers[handler_name] = []
+
+                if task_result._host not in self._notified_handlers[handler_name]:
+                    self._notified_handlers[handler_name].append(task_result._host)
+
+            elif result[0] == 'register_host_var':
+                # essentially the same as 'set_host_var' below, however we
+                # never follow the delegate_to value for registered vars
+                host      = result[1]
+                var_name  = result[2]
+                var_value = result[3]
+                self._variable_manager.set_host_variable(host, var_name, var_value)
+
+            elif result[0] in ('set_host_var', 'set_host_facts'):
+                host = result[1]
+                task = result[2]
+                item = result[3]
+
+                if task.delegate_to is not None:
+                    task_vars = self._variable_manager.get_vars(loader=self._loader, play=iterator._play, host=host, task=task)
+                    task_vars = self.add_tqm_variables(task_vars, play=iterator._play)
+                    if item is not None:
+                        task_vars['item'] = item
+                    templar = Templar(loader=self._loader, variables=task_vars)
+                    host_name = templar.template(task.delegate_to)
+                    target_host = self._inventory.get_host(host_name)
+                    if target_host is None:
+                        target_host = Host(name=host_name)
                 else:
-                    raise AnsibleError("unknown result message received: %s" % result[0])
-            except Queue.Empty:
-                pass
+                    target_host = host
 
+                if result[0] == 'set_host_var':
+                    var_name  = result[4]
+                    var_value = result[5]
+                    self._variable_manager.set_host_variable(target_host, var_name, var_value)
+                elif result[0] == 'set_host_facts':
+                    facts = result[4]
+                    self._variable_manager.set_host_facts(target_host, facts)
+
+            else:
+                raise AnsibleError("unknown result message received: %s" % result[0])
+            continue
         return ret_results
 
     def _wait_on_pending_results(self, iterator):
@@ -287,7 +285,7 @@ class StrategyBase:
         while self._pending_results > 0 and not self._tqm._terminated:
             results = self._process_pending_results(iterator)
             ret_results.extend(results)
-            time.sleep(0.01)
+            gevent.sleep(0)
         self._display.debug("no more pending results, returning what we have")
 
         return ret_results

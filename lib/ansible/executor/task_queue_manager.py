@@ -19,7 +19,8 @@
 from __future__ import (absolute_import, division, print_function)
 __metaclass__ = type
 
-import multiprocessing
+import gevent
+import gevent.queue as queue
 import os
 import socket
 import sys
@@ -27,12 +28,13 @@ import sys
 from ansible import constants as C
 from ansible.errors import AnsibleError
 from ansible.executor.play_iterator import PlayIterator
-from ansible.executor.process.worker import WorkerProcess
-from ansible.executor.process.result import ResultProcess
+import ansible.executor.process as Process
 from ansible.executor.stats import AggregateStats
 from ansible.playbook.play_context import PlayContext
 from ansible.plugins import callback_loader, strategy_loader, module_loader
 from ansible.template import Templar
+
+from ansible.utils.debug import debug
 
 __all__ = ['TaskQueueManager']
 
@@ -78,26 +80,18 @@ class TaskQueueManager:
         self._failed_hosts      = dict()
         self._unreachable_hosts = dict()
 
-        self._final_q = multiprocessing.Queue()
-
         # create the pool of worker threads, based on the number of forks specified
-        try:
-            fileno = sys.stdin.fileno()
-        except ValueError:
-            fileno = None
+        pool = Process.Pool(self._options.forks)
+
+        result = Process.Result()
+        self._final_q = result.output
 
         self._workers = []
         for i in range(self._options.forks):
-            main_q = multiprocessing.Queue()
-            rslt_q = multiprocessing.Queue()
+            worker = Process.Worker(result.input, pool, loader)
+            self._workers.append((worker, worker.input, worker.output))
 
-            prc = WorkerProcess(self, main_q, rslt_q, loader)
-            prc.start()
-
-            self._workers.append((prc, main_q, rslt_q))
-
-        self._result_prc = ResultProcess(self._final_q, self._workers)
-        self._result_prc.start()
+        self._result_prc = result
 
     def _initialize_notified_handlers(self, handlers):
         '''
@@ -202,12 +196,12 @@ class TaskQueueManager:
 
         self.terminate()
 
-        self._final_q.close()
+        #self._final_q.close()
         self._result_prc.terminate()
 
         for (worker_prc, main_q, rslt_q) in self._workers:
-            rslt_q.close()
-            main_q.close()
+            #rslt_q.close()
+            #main_q.close()
             worker_prc.terminate()
 
     def clear_failed_hosts(self):

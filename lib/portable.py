@@ -1,7 +1,7 @@
 import __builtin__,sys,os,itertools
 import ctypes
 executable = lambda(_): os.path.isfile(_) and os.access(_,os.X_OK)
-which = lambda _,envvar="PATH",extvar='PATHEXT':_ if executable(_) else iter(filter(executable,itertools.starmap(os.path.join,itertools.product(os.environ.get(envvar,os.defpath).split(os.pathsep),(_+e for e in os.environ.get(extvar,'').split(os.pathsep)))))).next() 
+which = lambda _,envvar="PATH",extvar='PATHEXT':_ if executable(_) else iter(filter(executable,itertools.starmap(os.path.join,itertools.product(os.environ.get(envvar,os.defpath).split(os.pathsep),(_+e for e in os.environ.get(extvar,'').split(os.pathsep)))))).next()
 
 ### Constants
 STD_INPUT_HANDLE = -10
@@ -355,7 +355,7 @@ class process(object):
         # set things off
         for t in threads:
             t.start()
-        return 
+        return
 
     @staticmethod
     def subprocess(program, cwd, environment, newlines, joined, shell=True, show=False):
@@ -377,7 +377,7 @@ class process(object):
         This creates a list of threads responsible for reading from /pipe/ and storing it into an asynchronous queue
         """
         return [ process.monitorPipe(name,pipe, **kwds) for name,pipe in [(name,pipe)]+list(more) ]
-    
+
     @staticmethod
     def monitorPipe(id, pipe, blocksize=1, daemon=True):
         """Create a monitoring thread that stuffs data from a pipe into a queue.

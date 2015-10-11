@@ -20,9 +20,10 @@ import time
 import ansible
 from ansible.errors import AnsibleError, AnsibleConnectionFailure, AnsibleFileNotFound
 from ansible.plugins.connections import ConnectionBase
+from ansible import constants as C
 import portable
 
-Executables = {
+Executable = {
     'plink' : portable.which('plink'),
 }
 
@@ -46,7 +47,7 @@ class Connection(ConnectionBase):
         # general options
         args['host'] = self._play_context.remote_addr
         if self._play_context.remote_user:
-            args['user'] = '{:s}'.format(self._play_context.remote_user)
+            args['user'] = _ = '{:s}'.format(self._play_context.remote_user)
             self._display.vvvvv('PLINK: ANSIBLE_REMOTE_USER/remote_user/ansible_user/user/-u set : ({:s})'.format(_, host=self._play_context.remote_addr))
 
         if self._play_context.port is not None:
@@ -57,23 +58,23 @@ class Connection(ConnectionBase):
         # custom options
         options = []
         if self._play_context.password:
-            options.append('-pw "{:s}"'.format(self._play_context.password)
+            options.append('-pw "{:s}"'.format(self._play_context.password))
         if self._play_context.verbosity > 3:
             options.append('-v')
-        if self._play_context.plink_args:
+        if hasattr(self._play_context, 'plink_args') and self._play_context.plink_args:
             _ = ' '.split(self._play_context.plink_args)
             options.extend(_)
             self._display.vvvvv('PLINK: ansible.cfg set plink_args : ({:s})'.format(')('.join(_), host=self._play_context.remote_addr))
         if not C.HOST_KEY_CHECKING:
             pass
         if self._play_context.private_key_file:
-            _ = '-i "{:s}"'.format(os.path.expanduser(self._play_context.private_key_file)
+            _ = '-i "{:s}"'.format(os.path.expanduser(self._play_context.private_key_file))
             options.append(_)
             self._display.vvvvv('PLINK: ANSIBLE_PRIVATE_KEY_FILE/private_key_file/ansible_ssh_private_key_file set : ({:s})'.format(_, host=self._play_context.remote_addr))
         args['options'] = ' '.join(options)
 
         # and we're done
-        return '"{:s}" {:s}'.format(program, self.command.format(**args))
+        return '{:s} {:s}'.format(program, self.command.format(**args))
 
     def who_is_the_lamest_of_them_all(self):
         done = False
@@ -84,8 +85,8 @@ class Connection(ConnectionBase):
             return
 
         # is it putty, or is it ansible...
-        if not ansible.constant.HOST_KEY_CHECKING:
-            p = portable.spawn(check, '{:s} nobody@{:s} exit'.format(Executable['plink'], self._play_context.remote_addr)
+        if not ansible.constants.HOST_KEY_CHECKING:
+            p = portable.spawn(check, '{:s} nobody@{:s} exit'.format(Executable['plink'], self._play_context.remote_addr))
             tick = tock = time.time()
             while not done and p.running and tock-tick < self._play_context.timeout:
                 tock = time.time()
@@ -96,7 +97,7 @@ class Connection(ConnectionBase):
 
     def _connect(self):
         self._connected = True
-        who_is_the_lamest_of_them_all()
+        self.who_is_the_lamest_of_them_all()
 
     @staticmethod
     def _escape(string, characters):
@@ -113,9 +114,9 @@ class Connection(ConnectionBase):
         CaptureOutput = False
         def _monitor_output(self=self, Output=Output, Error=Error):
             while CaptureOutput == False:
-                P.updater.stdout.send(yield)
+                P.updater.stdout.send((yield))
             while CaptureOutput:
-                Error.append(yield)
+                Error.append((yield))
             return
         def _monitor_command(self=self, Output=Output):
             # privilege escalation from ssh's _exec_command
@@ -163,9 +164,10 @@ class Connection(ConnectionBase):
         # FIXME: handle this the way that ansible is supposed to handle it
         self._display.vvv("ESTABLISH SSH CONNECTION FOR USER: {0}".format(self._play_context.remote_user), host=self._play_context.remote_addr)
         command = self._get_command(Executable['plink']) + ' ' + cmd.replace('"', '\\"')
+        self._display.vvvvv("Executing {!r}".format(command))
         P = portable.spawn(_monitor_command(), command, stderr=_monitor_output())
         returncode = P.wait()
-        assert not p.running:
+        assert not P.running
         stdout,stderr = ''.join(Output),''.join(Error)
         return (returncode, stdout, stderr)
 
