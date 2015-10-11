@@ -1,5 +1,6 @@
 import __builtin__,sys,os,itertools
 import ctypes
+executable = lambda(_): os.path.isfile(_) and os.access(_,os.X_OK)
 which = lambda _,envvar="PATH",extvar='PATHEXT':_ if executable(_) else iter(filter(executable,itertools.starmap(os.path.join,itertools.product(os.environ.get(envvar,os.defpath).split(os.pathsep),(_+e for e in os.environ.get(extvar,'').split(os.pathsep)))))).next() 
 
 ### Constants
@@ -112,9 +113,6 @@ class SID:
     def Identifier(cls, sid):
         return int(cls.unpack(sid)[4])
 
-def chdir(*args):
-    return os.chdir(*args)
-
 ### Conditional Functions
 if os.name == 'nt':
     from ctypes import windll
@@ -140,7 +138,6 @@ if os.name == 'nt':
             if res == 0: raise RuntimeError, 'Unable to unlock file %s'% self.file.name
 
     import win32com.client,win32net,win32security,ntsecuritycon
-    import pwd  # this should be importing the pwd wrapper
     WmiClient = win32com.client.GetObject('WinMgmts://')
     def getuid():
         process = win32com.client.GetObject(r'WinMgmts:\\.\root\cimv2:Win32_Process.Handle="%s"'%str(os.getpid()))
@@ -163,6 +160,7 @@ if os.name == 'nt':
         Everyone,_,_ = win32security.LookupAccountName("", "Everyone")
         User = Group = None,None
 
+        import pwd
         sd = win32security.GetFileSecurity(path, win32security.DACL_SECURITY_INFORMATION)
         dacl = sd.GetSecurityDescriptorDacl()
         for index in xrange(dacl.GetAceCount()):
@@ -231,6 +229,7 @@ if os.name == 'nt':
             if uid is not None and gid is not None: break
 
         # ripped from http://timgolden.me.uk/python/win32_how_do_i/add-security-to-a-file.html#the-short-version
+        import pwd
         sd = win32security.GetFileSecurity(path, win32security.OWNER_SECURITY_INFORMATION)
 
         # grab original owner
@@ -505,7 +504,7 @@ class process(object):
             return '<process running pid:%d>'%( self.id )
         return '<process not-running cmd:"%s">'%( self.commandline )
 
-### interfaces
+## interface for wrapping the process class
 def spawn(stdout, command, **options):
     """Spawn /command/ with the specified /options/. If program writes anything to it's screen, send it to the stdout function.
 
@@ -558,3 +557,64 @@ def spawn(stdout, command, **options):
 
     program.updater = updater   # keep a publically available ref of it
     return program
+
+### Memoize function
+def memoize(*kargs,**kattrs):
+    '''Converts a function into a memoized callable
+    kargs = a list of positional arguments to use as a key
+    kattrs = a keyword-value pair describing attributes to use as a key
+
+    if key='string', use kattrs[key].string as a key
+    if key=callable(n)', pass kattrs[key] to callable, and use the returned value as key
+
+    if no memoize arguments were provided, try keying the function's result by _all_ of it's arguments.
+    '''
+    F_VARARG = 0x4
+    F_VARKWD = 0x8
+    F_VARGEN = 0x20
+    kargs = map(None,kargs)
+    kattrs = tuple((o,a) for o,a in sorted(kattrs.items()))
+    def prepare_callable(fn, kargs=kargs, kattrs=kattrs):
+        if hasattr(fn,'im_func'):
+            fn = fn.im_func
+        assert isinstance(fn,memoize.__class__), 'Callable {!r} is not of a function type'.format(fn)
+        functiontype = type(fn)
+        cache = {}
+        co = fn.func_code
+        flags,varnames = co.co_flags,iter(co.co_varnames)
+        assert (flags & F_VARGEN) == 0, 'Not able to memoize %r generator function'% fn
+        argnames = itertools.islice(varnames, co.co_argcount)
+        c_positional = tuple(argnames)
+        c_attribute = kattrs
+        c_var = (varnames.next() if flags & F_VARARG else None, varnames.next() if flags & F_VARKWD else None)
+        if not kargs and not kattrs:
+            kargs[:] = itertools.chain(c_positional,filter(None,c_var))
+        def key(*args, **kwds):
+            res = iter(args)
+            p = dict(zip(c_positional,res))
+            p.update(kwds)
+            a,k = c_var
+            if a is not None: p[a] = tuple(res)
+            if k is not None: p[k] = dict(kwds)
+            k1 = (p.get(k, None) for k in kargs)
+            k2 = ((n(p[o]) if callable(n) else getattr(p[o],n,None)) for o,n in c_attribute)
+            return tuple(itertools.chain(k1, (None,), k2))
+        def callee(*args, **kwds):
+            res = key(*args, **kwds)
+            if res in cache:
+                return cache[res]
+            return cache.setdefault(res, fn(*args,**kwds))
+
+        # set some utilies on the memoized function
+        callee.memoize_key = lambda: key
+        callee.memoize_key.__doc__ = """Generate a unique key based on the provided arguments"""
+        callee.memoize_cache = lambda: cache
+        callee.memoize_cache.__doc__ = """Return the current memoize cache"""
+        callee.memoize_clear = lambda: cache.clear()
+        callee.memoize_clear.__doc__ = """Empty the current memoize cache"""
+
+        callee.func_name = fn.func_name
+        callee.func_doc = fn.func_doc
+        callee.callable = fn
+        return callee if isinstance(callee,functiontype) else functiontype(callee)
+    return prepare_callable(kargs.pop(0)) if not kattrs and len(kargs) == 1 and callable(kargs[0]) else prepare_callable
