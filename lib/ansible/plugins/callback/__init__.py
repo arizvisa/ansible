@@ -24,7 +24,7 @@ import difflib
 import warnings
 from copy import deepcopy
 
-from six import string_types
+from ansible.compat.six import string_types
 
 from ansible import constants as C
 from ansible.utils.unicode import to_unicode
@@ -107,10 +107,18 @@ class CallbackBase:
             except UnicodeDecodeError:
                 ret.append(">> the files are different, but the diff library cannot compare unicode strings\n\n")
 
-    def _process_items(self, result):
+    def _get_item(self, result):
+        if '_ansible_no_log' in result and result['_ansible_no_log']:
+            item = "(censored due to no_log)"
+        else:
+            item = result.get('item', None)
 
+        return item
+
+    def _process_items(self, result):
         for res in result._result['results']:
             newres = deepcopy(result)
+            res['item'] = self._get_item(res)
             newres._result = res
             if 'failed' in res and res['failed']:
                 self.v2_playbook_item_on_failed(newres)
@@ -118,8 +126,6 @@ class CallbackBase:
                 self.v2_playbook_item_on_skipped(newres)
             else:
                 self.v2_playbook_item_on_ok(newres)
-
-        #del result._result['results']
 
     def set_play_context(self, play_context):
         pass
@@ -200,11 +206,9 @@ class CallbackBase:
         self.runner_on_ok(host, result._result)
 
     def v2_runner_on_skipped(self, result):
-        if not C.DISPLAY_SKIPPED_HOSTS:
+        if C.DISPLAY_SKIPPED_HOSTS:
             host = result._host.get_name()
-            #FIXME, get item to pass through
-            item = None
-            self.runner_on_skipped(host, item)
+            self.runner_on_skipped(host, self._get_item(getattr(result._result,'results',{})))
 
     def v2_runner_on_unreachable(self, result):
         host = result._host.get_name()

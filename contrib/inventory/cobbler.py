@@ -72,6 +72,8 @@ try:
 except ImportError:
     import simplejson as json
 
+from six import iteritems
+
 # NOTE -- this file assumes Ansible is being accessed FROM the cobbler
 # server, so it does not attempt to login with a username and password.
 # this will be addressed in a future version of this script.
@@ -169,8 +171,15 @@ class CobblerInventory(object):
             dns_name = host['hostname'] #None
             ksmeta = None
             interfaces = host['interfaces']
+            # hostname is often empty for non-static IP hosts
+            if dns_name == '':
+                for (iname, ivalue) in iteritems(interfaces):
+                    if ivalue['management'] or not ivalue['static']:
+                        this_dns_name = ivalue.get('dns_name', None)
+                        if this_dns_name is not None and this_dns_name is not "":
+                            dns_name = this_dns_name
 
-            if dns_name is None:
+            if dns_name == '':
                 continue
 
             status = host['status']
@@ -196,7 +205,7 @@ class CobblerInventory(object):
 
             self.cache[dns_name] = host
             if "ks_meta" in host:
-                for key, value in host["ks_meta"].iteritems():
+                for key, value in iteritems(host["ks_meta"]):
                     self.cache[dns_name][key] = value
 
         self.write_to_cache(self.cache, self.cache_path_cache)

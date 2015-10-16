@@ -28,26 +28,10 @@ from ansible.errors import AnsibleError
 from hashlib import sha256
 from binascii import hexlify
 from binascii import unhexlify
-from six import PY3
 
 # Note: Only used for loading obsolete VaultAES files.  All files are written
 # using the newer VaultAES256 which does not require md5
 from hashlib import md5
-
-
-try:
-    from six import byte2int
-except ImportError:
-    # bytes2int added in six-1.4.0
-    if PY3:
-        import operator
-        byte2int = operator.itemgetter(0)
-    else:
-        def byte2int(bs):
-            return ord(bs[0])
-
-from ansible.utils.unicode import to_unicode, to_bytes
-
 
 try:
     from Crypto.Hash import SHA256, HMAC
@@ -86,6 +70,9 @@ try:
 except ImportError:
     pass
 
+from ansible.compat.six import PY3, byte2int
+from ansible.utils.unicode import to_unicode, to_bytes
+
 HAS_ANY_PBKDF2HMAC = HAS_PBKDF2 or HAS_PBKDF2HMAC
 
 CRYPTO_UPGRADE = "ansible-vault requires a newer version of pycrypto than the one installed on your platform. You may fix this with OS-specific commands such as: yum install python-devel; rpm -e --nodeps python-crypto; pip install pycrypto"
@@ -93,6 +80,8 @@ CRYPTO_UPGRADE = "ansible-vault requires a newer version of pycrypto than the on
 b_HEADER = b'$ANSIBLE_VAULT'
 CIPHER_WHITELIST = frozenset((u'AES', u'AES256'))
 CIPHER_WRITE_WHITELIST=frozenset((u'AES256',))
+# See also CIPHER_MAPPING at the bottom of the file which maps cipher strings
+# (used in VaultFile header) to a cipher class
 
 
 def check_prereqs():
@@ -136,12 +125,11 @@ class VaultLib:
         if not self.cipher_name or self.cipher_name not in CIPHER_WRITE_WHITELIST:
             self.cipher_name = u"AES256"
 
-        cipher_class_name = u'Vault{0}'.format(self.cipher_name)
-        if cipher_class_name in globals():
-            Cipher = globals()[cipher_class_name]
-            this_cipher = Cipher()
-        else:
+        try:
+            Cipher = CIPHER_MAPPING[self.cipher_name]
+        except KeyError:
             raise AnsibleError(u"{0} cipher could not be found".format(self.cipher_name))
+        this_cipher = Cipher()
 
         # encrypt data
         b_enc_data = this_cipher.encrypt(b_data, self.b_password)
@@ -194,10 +182,12 @@ class VaultLib:
         if not self.cipher_name:
             raise AnsibleError("the cipher must be set before adding a header")
 
-        tmpdata = [b'%s\n' % b_data[i:i+80] for i in range(0, len(b_data), 80)]
-        tmpdata.insert(0, b'%s;%s;%s\n' % (b_HEADER, self.b_version,
-            to_bytes(self.cipher_name, errors='strict', encoding='utf-8')))
-        tmpdata = b''.join(tmpdata)
+        header = b';'.join([b_HEADER, self.b_version,
+            to_bytes(self.cipher_name, errors='strict', encoding='utf-8')])
+        tmpdata = [header]
+        tmpdata += [b_data[i:i+80] for i in range(0, len(b_data), 80)]
+        tmpdata += [b'']
+        tmpdata = b'\n'.join(tmpdata)
 
         return tmpdata
 
@@ -300,20 +290,14 @@ class VaultEditor:
         else:
             self._edit_file_helper(filename, existing_data=plaintext, force_save=False)
 
-    def view_file(self, filename):
+    def plaintext(self, filename):
 
         check_prereqs()
 
-        # FIXME: Why write this to a temporary file at all? It would be safer
-        # to feed it to the PAGER on stdin.
-        _, tmp_path = tempfile.mkstemp()
         ciphertext = self.read_data(filename)
         plaintext = self.vault.decrypt(ciphertext)
-        self.write_data(plaintext, tmp_path)
 
-        # drop the user into pager on the tmp file
-        call(self._pager_shell_command(tmp_path))
-        os.remove(tmp_path)
+        return plaintext
 
     def rekey_file(self, filename, new_password):
 
@@ -360,13 +344,6 @@ class VaultEditor:
         editor.append(filename)
 
         return editor
-
-    def _pager_shell_command(self, filename):
-        PAGER = os.environ.get('PAGER','less')
-        pager = shlex.split(PAGER)
-        pager.append(filename)
-
-        return pager
 
 class VaultFile(object):
 
@@ -435,7 +412,7 @@ class VaultAES:
 
         d = d_i = b''
         while len(d) < key_length + iv_length:
-            text = b"%s%s%s" % (d_i, password, salt)
+            text = b''.join([d_i, password, salt])
             d_i = to_bytes(md5(text).digest(), errors='strict')
             d += d_i
 
@@ -581,7 +558,7 @@ class VaultAES256:
 
         # COMBINE SALT, DIGEST AND DATA
         hmac = HMAC.new(key2, cryptedData, SHA256)
-        message = b'%s\n%s\n%s' % (hexlify(salt), to_bytes(hmac.hexdigest()), hexlify(cryptedData))
+        message = b'\n'.join([hexlify(salt), to_bytes(hmac.hexdigest()), hexlify(cryptedData)])
         message = hexlify(message)
         return message
 
@@ -637,3 +614,10 @@ class VaultAES256:
                 result |= ord(x) ^ ord(y)
         return result == 0
 
+
+# Keys could be made bytes later if the code that gets the data is more
+# naturally byte-oriented
+CIPHER_MAPPING = {
+        u'AES': VaultAES,
+        u'AES256': VaultAES256,
+    }

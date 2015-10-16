@@ -39,11 +39,15 @@ class ActionModule(ActionBase):
 
         if module == 'auto':
             facts = self._execute_module(module_name='setup', module_args=dict(filter='ansible_pkg_mgr'), task_vars=task_vars)
-            self._display.degug("Facts %s" % facts)
+            self._display.debug("Facts %s" % facts)
             if not 'failed' in facts:
                 module = getattr(facts['ansible_facts'], 'ansible_pkg_mgr', 'auto')
 
         if module != 'auto':
+
+            if module not in self._shared_loader_obj.module_loader:
+                return {'failed': True, 'msg': 'Could not find a module for %s.' % module}
+
             # run the 'package' module
             new_module_args = self._task.args.copy()
             if 'use' in new_module_args:

@@ -19,7 +19,7 @@
 from __future__ import (absolute_import, division, print_function)
 __metaclass__ = type
 
-from six import string_types
+from ansible.compat.six import iteritems, string_types
 
 from ansible.errors import AnsibleError
 
@@ -97,6 +97,12 @@ class Task(Base, Conditional, Taggable, Become):
 
         super(Task, self).__init__()
 
+    def get_path(self):
+       ''' return the absolute path of the task with its line number '''
+
+       if hasattr(self, '_ds'):
+           return "%s:%s" % (self._ds._data_source, self._ds._line_number)
+
     def get_name(self):
        ''' return the name of the task '''
 
@@ -114,11 +120,11 @@ class Task(Base, Conditional, Taggable, Become):
     def _merge_kv(self, ds):
         if ds is None:
             return ""
-        elif isinstance(ds, basestring):
+        elif isinstance(ds, string_types):
             return ds
         elif isinstance(ds, dict):
             buf = ""
-            for (k,v) in ds.iteritems():
+            for (k,v) in iteritems(ds):
                 if k.startswith('_'):
                     continue
                 buf = buf + "%s=%s " % (k,v)
@@ -164,11 +170,11 @@ class Task(Base, Conditional, Taggable, Become):
         # and the delegate_to value from the various possible forms
         # supported as legacy
         args_parser = ModuleArgsParser(task_ds=ds)
-        (action, args, connection) = args_parser.parse()
+        (action, args, delegate_to) = args_parser.parse()
 
         new_ds['action']      = action
         new_ds['args']        = args
-        new_ds['connection'] = connection
+        new_ds['delegate_to'] = delegate_to
 
         # we handle any 'vars' specified in the ds here, as we may
         # be adding things to them below (special handling for includes).
@@ -180,8 +186,8 @@ class Task(Base, Conditional, Taggable, Become):
         else:
             new_ds['vars'] = dict()
 
-        for (k,v) in ds.iteritems():
-            if k in ('action', 'local_action', 'args', 'connection') or k == action or k == 'shell':
+        for (k,v) in iteritems(ds):
+            if k in ('action', 'local_action', 'args', 'delegate_to') or k == action or k == 'shell':
                 # we don't want to re-assign these values, which were
                 # determined by the ModuleArgsParser() above
                 continue
@@ -192,7 +198,7 @@ class Task(Base, Conditional, Taggable, Become):
                 # top level of the task, so we move those into the 'vars' dictionary
                 # here, and show a deprecation message as we will remove this at
                 # some point in the future.
-                if action == 'include' and k not in self._get_base_attributes():
+                if action == 'include' and k not in self._get_base_attributes() and k not in self.DEPRECATED_ATTRIBUTES:
                     self._display.deprecated("Specifying include variables at the top-level of the task is deprecated. Please see:\nhttp://docs.ansible.com/ansible/playbooks_roles.html#task-include-files-and-encouraging-reuse\n\nfor currently supported syntax regarding included files and variables")
                     new_ds['vars'][k] = v
                 else:
@@ -346,19 +352,25 @@ class Task(Base, Conditional, Taggable, Become):
         '''
         Generic logic to get the attribute or parent attribute for a task value.
         '''
-        value = self._attributes[attr]
-        if self._block and (value is None or extend):
-            parent_value = getattr(self._block, attr)
-            if extend:
-                value = self._extend_value(value, parent_value)
-            else:
-                value = parent_value
-        if self._task_include and (value is None or extend):
-            parent_value = getattr(self._task_include, attr)
-            if extend:
-                value = self._extend_value(value, parent_value)
-            else:
-                value = parent_value
+        value = None
+        try:
+            value = self._attributes[attr]
+
+            if self._block and (value is None or extend):
+                parent_value = getattr(self._block, attr)
+                if extend:
+                    value = self._extend_value(value, parent_value)
+                else:
+                    value = parent_value
+            if self._task_include and (value is None or extend):
+                parent_value = getattr(self._task_include, attr)
+                if extend:
+                    value = self._extend_value(value, parent_value)
+                else:
+                    value = parent_value
+        except KeyError:
+            pass
+
         return value
 
     def _get_attr_environment(self):

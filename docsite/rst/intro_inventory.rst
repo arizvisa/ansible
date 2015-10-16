@@ -48,7 +48,7 @@ To make things explicit, it is suggested that you set them if things are not run
 
 Suppose you have just static IPs and want to set up some aliases that live in your host file, or you are connecting through tunnels.  You can also describe hosts like this::
 
-    jumper ansible_ssh_port=5555 ansible_ssh_host=192.168.1.50
+    jumper ansible_port=5555 ansible_host=192.168.1.50
 
 In the above example, trying to ansible against the host alias "jumper" (which may not even be a real hostname) will contact 192.168.1.50 on port 5555.  Note that this is using a feature of the inventory file to define some special variables.  Generally speaking this is not the best
 way to define variables that describe your system policy, but we'll share suggestions on doing this later.  We're just getting started.
@@ -64,13 +64,18 @@ For numeric patterns, leading zeros can be included or removed, as desired. Rang
     [databases]
     db-[a:f].example.com
 
-You can also select the connection type and user on a per host basis::
+
+.. include:: ansible_ssh_changes_note.rst
+
+You can also select the connection type and user on a per host basis:
+
+::
 
    [targets]
 
    localhost              ansible_connection=local
-   other1.example.com     ansible_connection=ssh        ansible_ssh_user=mpdehaan
-   other2.example.com     ansible_connection=ssh        ansible_ssh_user=mdehaan
+   other1.example.com     ansible_connection=ssh        ansible_user=mpdehaan
+   other2.example.com     ansible_connection=ssh        ansible_user=mdehaan
 
 As mentioned above, setting these in the inventory file is only a shorthand, and we'll discuss how to store them in individual files
 in the 'host_vars' directory a bit later on.
@@ -146,7 +151,8 @@ In addition to storing variables directly in the INI file, host
 and group variables can be stored in individual files relative to the
 inventory file.  
 
-These variable files are in YAML format.  See :doc:`YAMLSyntax` if you are new to YAML.
+These variable files are in YAML format. Valid file extensions include '.yml', '.yaml', '.json',
+or no file extension. See :doc:`YAMLSyntax` if you are new to YAML.
 
 Assuming the inventory file path is::
 
@@ -155,7 +161,7 @@ Assuming the inventory file path is::
 If the host is named 'foosball', and in groups 'raleigh' and 'webservers', variables
 in YAML files at the following locations will be made available to the host::
 
-    /etc/ansible/group_vars/raleigh
+    /etc/ansible/group_vars/raleigh # can optionally end in '.yml', '.yaml', or '.json'
     /etc/ansible/group_vars/webservers
     /etc/ansible/host_vars/foosball
 
@@ -199,18 +205,34 @@ Host connection::
     ansible_connection
       Connection type to the host. Candidates are local, smart, ssh or paramiko.  The default is smart.
 
+
+.. include:: ansible_ssh_changes_note.rst
+
 SSH connection::
 
-    ansible_ssh_host
+    ansible_host
       The name of the host to connect to, if different from the alias you wish to give to it.
-    ansible_ssh_port
+    ansible_port
       The ssh port number, if not 22
-    ansible_ssh_user
+    ansible_user
       The default ssh user name to use.
     ansible_ssh_pass
       The ssh password to use (this is insecure, we strongly recommend using --ask-pass or SSH keys)
     ansible_ssh_private_key_file
       Private key file used by ssh.  Useful if using multiple keys and you don't want to use SSH agent.
+    ansible_ssh_common_args
+      This setting is always appended to the default command line for
+      sftp, scp, and ssh. Useful to configure a ``ProxyCommand`` for a
+      certain host (or group).
+    ansible_sftp_extra_args
+      This setting is always appended to the default sftp command line.
+    ansible_scp_extra_args
+      This setting is always appended to the default scp command line.
+    ansible_ssh_extra_args
+      This setting is always appended to the default ssh command line.
+    ansible_ssh_pipelining
+      Determines whether or not to use SSH pipelining. This can override the
+      ``pipelining`` setting in ``ansible.cfg``.
 
 Privilege escalation (see :doc:`Ansible Privilege Escalation<become>` for further details)::
 
@@ -239,7 +261,7 @@ Remote host environment parameters::
 
 Examples from a host file::
 
-  some_host         ansible_ssh_port=2222     ansible_ssh_user=manager
+  some_host         ansible_port=2222     ansible_user=manager
   aws_host          ansible_ssh_private_key_file=/home/example/.ssh/aws.pem
   freebsd_host      ansible_python_interpreter=/usr/local/bin/python
   ruby_module_host  ansible_ruby_interpreter=/usr/bin/ruby.1.9.3

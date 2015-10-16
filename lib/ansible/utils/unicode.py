@@ -19,7 +19,7 @@
 from __future__ import (absolute_import, division, print_function)
 __metaclass__ = type
 
-from six import string_types, text_type, binary_type, PY3
+from ansible.compat.six import string_types, text_type, binary_type, PY3
 
 # to_bytes and to_unicode were written by Toshio Kuratomi for the
 # python-kitchen library https://pypi.python.org/pypi/kitchen
@@ -251,3 +251,10 @@ def to_bytes(obj, encoding='utf-8', errors='replace', nonstring=None):
 # ensure that a filter will return unicode values.
 def unicode_wrap(func, *args, **kwargs):
     return to_unicode(func(*args, **kwargs), nonstring='passthru')
+
+
+# Alias for converting to native strings.
+if PY3:
+    to_str = to_unicode
+else:
+    to_str = to_bytes
