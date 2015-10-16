@@ -17,6 +17,7 @@
 #
 import time
 
+import os
 import ansible
 from ansible.errors import AnsibleError, AnsibleConnectionFailure, AnsibleFileNotFound
 from ansible.plugins.connection import ConnectionBase
@@ -107,8 +108,8 @@ class Connection(ConnectionBase):
             res = res.replace(ch, '\\'+ch)
         return res
 
-    def exec_command(self, cmd, tmp_path, in_data=None, executable=None, sudoable=True):
-        super(Connection, self).exec_command(cmd=cmd, tmp_path=tmp_path, in_data=in_data, executable=executable, sudoable=sudoable)
+    def exec_command(self, cmd, in_data=None, sudoable=True):
+        super(Connection, self).exec_command(cmd=cmd, in_data=in_data, sudoable=sudoable)
 
         Output,Error = [],[]
         CaptureOutput = False

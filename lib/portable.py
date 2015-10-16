@@ -68,8 +68,12 @@ class OVERLAPPED(ctypes.Structure):
     ]
 
 class LockFile(object):
-    def __init__(self, path, mode):
-        self.file = open(path, mode)
+    def __init__(self, path, mode='r+'):
+        if isinstance(path, basestring):
+            self.file = open(path, mode)
+        elif isinstance(path, (int,long)):
+            self.file = os.fdopen(path, mode)
+        return
     def __enter__(self):
         self.acquire()
         return self.file
@@ -124,7 +128,7 @@ if os.name == 'nt':
             raise RuntimeError, windll.kernel32.GetLastError()
         return WINSZ(csbi.dwSize.Y, csbi.dwSize.X, csbi.dwCursorPosition.X, csbi.dwCursorPosition.Y)
 
-    class LockFile(file):
+    class LockFile(LockFile):
         def acquire(self):
             handle = windll.msvcrt.get_osfhandle(self.file)
             ol = OVERLAPPED()
