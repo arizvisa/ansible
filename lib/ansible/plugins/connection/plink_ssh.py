@@ -19,7 +19,7 @@ import time
 
 import ansible
 from ansible.errors import AnsibleError, AnsibleConnectionFailure, AnsibleFileNotFound
-from ansible.plugins.connections import ConnectionBase
+from ansible.plugins.connection import ConnectionBase
 from ansible import constants as C
 import portable
 
