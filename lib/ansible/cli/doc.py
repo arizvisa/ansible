@@ -16,7 +16,7 @@
 # ansible-vault is a script that encrypts/decrypts YAML files. See
 # http://docs.ansible.com/playbooks_vault.html for more details.
 
-import fcntl
+import portable
 import datetime
 import os
 import struct
@@ -154,8 +154,7 @@ class DocCLI(CLI):
     def get_module_list_text(self):
         tty_size = 0
         if os.isatty(0):
-            tty_size = struct.unpack('HHHH',
-                fcntl.ioctl(0, termios.TIOCGWINSZ, struct.pack('HHHH', 0, 0, 0, 0)))[1]
+            tty_size = portable.GetConsoleDimensions().ws_col
         columns = max(60, tty_size)
         displace = max(len(x) for x in self.module_list)
         linelimit = columns - displace - 5

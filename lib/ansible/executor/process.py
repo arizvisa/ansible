@@ -48,7 +48,7 @@ class IOGenerator(object):
         self.output.put(result)
     def run(self, input):
         raise NotImplementedError
-    def exception(self, record, (type, value, traceback)):
+    def exception(self, record, (type, value, trace)):
         raise NotImplementedError
     def __call__(self, *args, **kwds):
         while self.task:
@@ -74,7 +74,7 @@ class Worker(IOGenerator):
         self._TaskExecutorPool = taskpool
         self._new_stdin = sys.stdin
 
-    def exception(self, record, (type, value, traceback)):
+    def exception(self, record, (type, value, trace)):
         (host, task, basedir, job_vars, play_context, shared_loader_obj) = record
         if type == AnsibleConnectionFailure:
             try:
@@ -86,10 +86,10 @@ class Worker(IOGenerator):
             return True
 
         debug("WORKER EXCEPTION: %s" % value)
-        debug("WORKER EXCEPTION: %s" % traceback.format_exc())
+        debug("WORKER EXCEPTION: %s" % '\n'.join(traceback.format_exception(type, value, trace)))
         try:
             if task:
-                result = TaskResult(host, task, dict(failed=True, exception=traceback.format_exc(), stdout=''))
+                result = TaskResult(host, task, dict(failed=True, exception='\n'.join(traceback.format_exception(type, value, trace)), stdout=''))
                 self.send(result)
         except:
             return False
@@ -101,10 +101,9 @@ class Worker(IOGenerator):
 
         self._loader.set_basedir(basedir)
         task.set_loader(self._loader)
-        new_play_context = play_context.set_task_and_variable_override(task=task, variables=job_vars)
 
         debug("running TaskExecutor() for %s/%s" % (host, task))
-        executor = TaskExecutor(host, task, job_vars, new_play_context, self._new_stdin, self._loader, shared_loader_obj)
+        executor = TaskExecutor(host, task, job_vars, play_context, self._new_stdin, self._loader, shared_loader_obj)
         self._TaskExecutorPool.apply_async(executor.run, callback=(lambda result,host=host,task=task: self.send_result(result,host,task)))
         return True
 
@@ -114,8 +113,8 @@ class Worker(IOGenerator):
         self.send(res)
 
 class Result(IOGenerator):
-    def exception(self, record, (type, value, traceback)):
-        traceback.print_exc()
+    def exception(self, record, (type, value, trace)):
+        traceback.print_exception(type, value, trace)
         return False
 
     def run(self, result):

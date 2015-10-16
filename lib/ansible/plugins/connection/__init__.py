@@ -20,7 +20,7 @@
 from __future__ import (absolute_import, division, print_function)
 __metaclass__ = type
 
-import fcntl
+import portable
 import gettext
 import select
 import os
@@ -87,6 +87,10 @@ class ConnectionBase(with_metaclass(ABCMeta, object)):
         self._shell = shell_loader.get(shell_type)
         if not self._shell:
             raise AnsibleError("Invalid shell type specified (%s), or the plugin for that shell type is missing." % shell_type)
+
+        # allocate the lockfile
+        f = self._play_context.connection_lockfd
+        self._lockfd = portable.LockFile(f)
 
     def _become_method_supported(self):
         ''' Checks if the current class supports this privilege escalation method '''
@@ -219,12 +223,11 @@ class ConnectionBase(with_metaclass(ABCMeta, object)):
         return missing_password and missing_password in output
 
     def connection_lock(self):
-        f = self._play_context.connection_lockfd
         self._display.vvvv('CONNECTION: pid %d waiting for lock on %d' % (os.getpid(), f))
-        fcntl.lockf(f, fcntl.LOCK_EX)
+        self._lockfd.acquire()
         self._display.vvvv('CONNECTION: pid %d acquired lock on %d' % (os.getpid(), f))
 
     def connection_unlock(self):
         f = self._play_context.connection_lockfd
-        fcntl.lockf(f, fcntl.LOCK_UN)
+        self._lockfd.release()
         self._display.vvvv('CONNECTION: pid %d released lock on %d' % (os.getpid(), f))

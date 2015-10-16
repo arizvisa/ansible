@@ -1,4 +1,4 @@
-import __builtin__,sys,os,itertools
+import __builtin__,sys,os,itertools,stat
 import ctypes
 executable = lambda(_): os.path.isfile(_) and os.access(_,os.X_OK)
 which = lambda _,envvar="PATH",extvar='PATHEXT':_ if executable(_) else iter(filter(executable,itertools.starmap(os.path.join,itertools.product(os.environ.get(envvar,os.defpath).split(os.pathsep),(_+e for e in os.environ.get(extvar,'').split(os.pathsep)))))).next()
@@ -158,21 +158,20 @@ if os.name == 'nt':
     def chmod(path, mode):
         # get the ugo out of the dacl
         Everyone,_,_ = win32security.LookupAccountName("", "Everyone")
-        User = Group = None,None
+        User,Group = None,None
 
         import pwd
         sd = win32security.GetFileSecurity(path, win32security.DACL_SECURITY_INFORMATION)
         dacl = sd.GetSecurityDescriptorDacl()
         for index in xrange(dacl.GetAceCount()):
             _,_,sid = dacl.GetAce(index)
-            name,domain,_ = win32security.LookupAccountSid(None,sid)
+            name,domain,sidtype = win32security.LookupAccountSid(None,sid)
 
             # figure out the account type
-            acct = win32com.client.GetObject(r'WinMgmts:\\.\root\cimv2:Win32_Account.Domain="%s",Name="%s"'%(domain,name))
-            if acct.SIDType == ntsecuritycon.SidTypeUser and User is None:
-                User = acct.Sid
-            if acct.SIDType == ntsecuritycon.SidTypeGroup and Group is None:
-                Group = acct.Sid
+            if sidtype == ntsecuritycon.SidTypeUser and User is None:
+                User = sid
+            if sidtype == ntsecuritycon.SidTypeGroup and Group is None:
+                Group = sid
             continue
 
         # default to Guest
@@ -182,32 +181,33 @@ if os.name == 'nt':
         if Group is None:
             name,domain,_ = win32security.LookupAccountSid(None,User)
             acct = pwd.Query.ByName(domain,name)
-            Group = win32security.ConvertStringSidToSid(pwd.Query.Group(acct).Sid)
+            Group = pwd.Query.Group(acct)['user_sid']
 
-        # convert mode to a shiftable list
-        res = []
-        for _ in range(8):
-            res.append(mode & 1)
-            mode >>= 1
-        mode = res
-
-        # generate ACL from list
-        flags = [ntsecuritycon.FILE_GENERIC_EXECUTE, ntsecuritycon.FILE_GENERIC_WRITE, ntsecuritycon.FILE_GENERIC_READ]
+        # generate ACL from mode
         dacl = win32security.ACL()
         res = 0
-        for i in xrange(3):
-            if mode.pop(0):
-                res |= flags[i]
+        if mode & stat.S_IXOTH:
+            res |= ntsecuritycon.FILE_GENERIC_EXECUTE
+        if mode & stat.S_IWOTH:
+            res |= ntsecuritycon.FILE_GENERIC_WRITE
+        if mode & stat.S_IROTH:
+            res |= ntsecuritycon.FILE_GENERIC_READ
         dacl.AddAccessAllowedAce(win32security.ACL_REVISION, res, Everyone)
         res = 0
-        for i in xrange(3):
-            if mode.pop(0):
-                res |= flags[i]
+        if mode & stat.S_IXGRP:
+            res |= ntsecuritycon.FILE_GENERIC_EXECUTE
+        if mode & stat.S_IWGRP:
+            res |= ntsecuritycon.FILE_GENERIC_WRITE
+        if mode & stat.S_IRGRP:
+            res |= ntsecuritycon.FILE_GENERIC_READ
         dacl.AddAccessAllowedAce(win32security.ACL_REVISION, res, Group)
         res = 0
-        for i in xrange(3):
-            if mode.pop(0):
-                res |= flags[i]
+        if mode & stat.S_IXUSR:
+            res |= ntsecuritycon.FILE_GENERIC_EXECUTE
+        if mode & stat.S_IWUSR:
+            res |= ntsecuritycon.FILE_GENERIC_WRITE
+        if mode & stat.S_IRUSR:
+            res |= ntsecuritycon.FILE_GENERIC_READ
         dacl.AddAccessAllowedAce(win32security.ACL_REVISION, res, User)
 
         sd.SetSecurityDescriptorDacl(1, dacl, 0)
@@ -222,14 +222,21 @@ if os.name == 'nt':
     def chown(path, uid, gid):
         # get the sid for the uid, and the gid
         user = group = None
-        for acct in WmiClient.InstancesOf('Win32_Account'):
-            id = SID.Identifier(acct.SID)
-            if id == uid and acct.SidType == ntsecuritycon.SidTypeUser: user = acct.SID
-            if id == gid and acct.SidType == ntsecuritycon.SidTypeGroup: group = acct.SID
-            if uid is not None and gid is not None: break
+        import pwd,grp
+        for acct in pwd.Query.All():
+            id = SID.Identifier(win32security.ConvertSidToStringSid(acct['user_sid']))
+            if id == uid and acct.SidType == ntsecuritycon.SidTypeUser:
+                user = acct['user_sid']
+                break
+            continue
+        for acct in grp.Query.All():
+            id = SID.Identifier(win32security.ConvertSidToStringSid(acct['user_sid']))
+            if id == gid and acct.SidType == ntsecuritycon.SidTypeGroup:
+                group = acct['user_sid']
+                break
+            continue
 
         # ripped from http://timgolden.me.uk/python/win32_how_do_i/add-security-to-a-file.html#the-short-version
-        import pwd
         sd = win32security.GetFileSecurity(path, win32security.OWNER_SECURITY_INFORMATION)
 
         # grab original owner
@@ -238,7 +245,7 @@ if os.name == 'nt':
         if group is None and gid != -1:
             name,domain,_ = win32security.LookupAccountSid(None,user)
             acct = pwd.Query.ByName(domain,name)
-            group = win32security.ConvertStringSidToSid(pwd.Query.Group(acct).Sid)
+            group = pwd.Query.Group(acct)['user_sid']
 
         if uid != -1:
             sd.SetSecurityDescriptorOwner(user, True)
@@ -250,6 +257,7 @@ if os.name == 'nt':
     sys.modules['os'].chown = chown
 
 else:
+    import termios
     def GetConsoleDimensions():
         ws = WINSZ()
         res = fcntl.ioctl(0, termios.TIOCGWINSZ, ctypes.pointer(ws))

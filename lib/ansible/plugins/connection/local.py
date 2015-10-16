@@ -77,7 +77,7 @@ class Connection(ConnectionBase):
 
         if self._play_context.prompt and self._play_context.become_pass and sudoable:
             tick = tock = time.now()
-            while p.running and not self.check_become_success(become_output) and (tock - tick) < self._play_context.timeout
+            while p.running and not self.check_become_success(become_output) and (tock - tick) < self._play_context.timeout:
                 p.write(self._play_context.become_pass + '\n')
                 tock = time.now()
             if tock-tick >= self._play_context.timeout:
