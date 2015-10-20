@@ -49,11 +49,10 @@ SELINUX_SPECIAL_FS="<<SELINUX_SPECIAL_FILESYSTEMS>>"
 
 import locale
 import os
-import portable
+import portable,array
 import re
 import pipes
 import shlex
-import subprocess
 import sys
 import types
 import time
@@ -1616,7 +1615,7 @@ class AnsibleModule(object):
             # rename might not preserve context
             self.set_context_if_different(dest, context, False)
 
-    def run_command(self, args, check_rc=False, close_fds=True, executable=None, data=None, binary_data=False, path_prefix=None, cwd=None, use_unsafe_shell=False, prompt_regex=None):
+    def run_command(self, args, check_rc=False, close_fds=(os.name != 'nt'), executable=None, data=None, binary_data=False, path_prefix=None, cwd=None, use_unsafe_shell=False, prompt_regex=None):
         '''
         Execute a command, returns rc, stdout, and stderr.
         args is the command to run
@@ -1663,7 +1662,6 @@ class AnsibleModule(object):
 
         rc = 0
         msg = None
-        st_in = None
 
         # Set a temporary env path if a prefix is passed
         env=os.environ
@@ -1700,16 +1698,9 @@ class AnsibleModule(object):
             clean_args.append(heuristic_log_sanitize(arg))
         clean_args = ' '.join(pipes.quote(arg) for arg in clean_args)
 
-        if data:
-            st_in = subprocess.PIPE
-
-        kwargs = dict(
+        kwargs = dict(  # XXX
             executable=executable,
             shell=shell,
-            close_fds=close_fds,
-            stdin=st_in,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE
         )
 
         if path_prefix:
@@ -1728,8 +1719,29 @@ class AnsibleModule(object):
                 e = get_exception()
                 self.fail_json(rc=e.errno, msg="Could not open %s, %s" % (cwd, str(e)))
 
-        try:
+        # Allocate the state object that gets written to
+        State = type('', (object,), {})
+        State.stdout = array.array('c')
+        State.stderr = array.array('c')
 
+        # Exception that gets raised if a prompt is discovered
+        class PromptException(Exception): pass
+
+        # Callbacks that capture the output
+        def capture_stdout(target):
+            while cmd.running:
+                dat = (yield)
+                target += array.array('c', dat)
+                if prompt_re and prompt_re.search(target.tostring()) and not data:
+                    raise PromptException, (257, target.tostring(), "A prompt was encountered while running a command, but no input data was specified")
+                continue
+            return
+        def capture_stderr(target):
+            while cmd.running:
+                target += array.array('c', (yield))
+            return
+
+        try:
             if self._debug:
                 if isinstance(args, list):
                     running = ' '.join(args)
@@ -1737,69 +1749,38 @@ class AnsibleModule(object):
                     running = args
                 self.log('Executing: ' + running)
 
-            cmd = subprocess.Popen(args, **kwargs)
+            # Spawn our process
+            cmd = portable.spawn(capture_stdout(State.stdout), args, stderr=capture_stderr(State.stderr), **kwargs)
 
-            # the communication logic here is essentially taken from that
-            # of the _communicate() function in ssh.py
-
-            stdout = ''
-            stderr = ''
-            rpipes = [cmd.stdout, cmd.stderr]
-
+            # Write input to process' stdin
             if data:
                 if not binary_data:
                     data += '\n'
-                cmd.stdin.write(data)
-                cmd.stdin.close()
+                cmd.write(data)
+                cmd.close()
 
-            while True:
-                rfd, wfd, efd = select.select(rpipes, [], rpipes, 1)
-                if cmd.stdout in rfd:
-                    dat = os.read(cmd.stdout.fileno(), 9000)
-                    stdout += dat
-                    if dat == '':
-                        rpipes.remove(cmd.stdout)
-                if cmd.stderr in rfd:
-                    dat = os.read(cmd.stderr.fileno(), 9000)
-                    stderr += dat
-                    if dat == '':
-                        rpipes.remove(cmd.stderr)
-                # if we're checking for prompts, do it now
-                if prompt_re:
-                    if prompt_re.search(stdout) and not data:
-                        return (257, stdout, "A prompt was encountered while running a command, but no input data was specified")
-                # only break out if no pipes are left to read or
-                # the pipes are completely read and
-                # the process is terminated
-                if (not rpipes or not rfd) and cmd.poll() is not None:
-                    break
-                # No pipes are left to read but process is not yet terminated
-                # Only then it is safe to wait for the process to be finished
-                # NOTE: Actually cmd.poll() is always None here if rpipes is empty
-                elif not rpipes and cmd.poll() == None:
-                    cmd.wait()
-                    # The process is terminated. Since no pipes to read from are
-                    # left, there is no need to call select() again.
-                    break
+            # Wait until things are done
+            rc = cmd.wait()
 
-            cmd.stdout.close()
-            cmd.stderr.close()
-
-            rc = cmd.returncode
         except (OSError, IOError):
             e = get_exception()
             self.fail_json(rc=e.errno, msg=str(e), cmd=clean_args)
+        except PromptException, (code, output, message):
+            assert code == 257, "Unexpected return code"
+            return (code, output, message)
         except:
             self.fail_json(rc=257, msg=traceback.format_exc(), cmd=clean_args)
 
+        assert not cmd.running, "Process {!r} hasn't terminated properly".format(cmd)
+
         if rc != 0 and check_rc:
-            msg = heuristic_log_sanitize(stderr.rstrip())
-            self.fail_json(cmd=clean_args, rc=rc, stdout=stdout, stderr=stderr, msg=msg)
+            msg = heuristic_log_sanitize(State.stderr.tostring().rstrip())
+            self.fail_json(cmd=clean_args, rc=rc, stdout=State.stdout.tostring(), stderr=State.stderr.tostring(), msg=msg)
 
         # reset the pwd
         os.chdir(prev_dir)
 
-        return (rc, stdout, stderr)
+        return (rc, State.stdout.tostring(), State.stderr.tostring())
 
     def append_to_file(self, filename, str):
         filename = os.path.expandvars(os.path.expanduser(filename))

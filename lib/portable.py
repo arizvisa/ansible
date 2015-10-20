@@ -428,7 +428,15 @@ class process(object):
             return self.program.stdin.write(data)
 
         pid,result = self.program.pid,self.program.poll()
-        raise IOError, 'Unable to write to terminated process %d. Process terminated with a returncode of %d'% (pid,result)
+        raise IOError, 'Unable to write to stdin for process %d. Process %s'% (pid, 'is still running.' if result is None else 'has terminated with code %d.'% result)
+
+    def close(self):
+        """Closes stdin of the program"""
+        if self.program is not None and self.program.poll() is None and not self.program.stdin.closed:
+            return self.program.stdin.close()
+
+        pid,result = self.program.pid,self.program.poll()
+        raise IOError, 'Unable to close stdin for process %d. Process %s'% (pid, 'is still running.' if result is None else 'has terminated with code %d.'% result)
 
     def signal(self, signal):
         """Raise a signal to the program"""
@@ -436,7 +444,7 @@ class process(object):
             return self.program.send_signal(signal)
 
         pid,result = self.program.pid,self.program.poll()
-        raise IOError, 'Unable to signal terminated process %d. Process terminated with a returncode of %d'% (pid,result)
+        raise IOError, 'Unable to raise signal %r in process %d. Process %s'% (signal, pid, 'is still running.' if result is None else 'has terminated with code %d.'% result)
 
     def wait(self, timeout=0.0):
         """Wait a given amount of time for the process to terminate"""
@@ -449,6 +457,7 @@ class process(object):
             while self.running and t + timeout > time.time():        # spin cpu until we timeout
                 if not self.exceptionQueue.empty():
                     res = self.exceptionQueue.get()
+                    self.exceptionQueue.task_done()
                     raise res[0],res[1],res[2]
                 continue
             return program.returncode
@@ -459,6 +468,7 @@ class process(object):
         while self.running:
             if not self.exceptionQueue.empty():
                 res = self.exceptionQueue.get()
+                self.exceptionQueue.task_done()
                 raise res[0],res[1],res[2]
             continue    # ugh...poll-forever/kill-cpu until program terminates...
         return program.returncode
@@ -468,6 +478,7 @@ class process(object):
         if not self.running:
             if not self.exceptionQueue.empty():
                 res = self.exceptionQueue.get()
+                self.exceptionQueue.task_done()
                 raise res[0],res[1],res[2]
             self.stop_monitoring()
             return self.program.poll()
@@ -476,6 +487,7 @@ class process(object):
         while self.running:
             if not self.exceptionQueue.empty():
                 res = self.exceptionQueue.get()
+                self.exceptionQueue.task_done()
                 raise res[0],res[1],res[2]
             continue
         self.stop_monitoring()
@@ -514,6 +526,7 @@ class process(object):
         # pull an exception out of the exceptionQueue if there's any left
         if not self.exceptionQueue.empty():
             res = self.exceptionQueue.get()
+            self.exceptionQueue.task_done()
             raise res[0],res[1],res[2]
         return
 
@@ -549,6 +562,7 @@ def spawn(stdout, command, **options):
                         res = error.send(data)
                         res and P.write(res)
                     else: error(data)
+                    P.stderr.task_done()
 
                 # stuff stdout to callback
                 if not P.stdout.empty():
@@ -557,6 +571,7 @@ def spawn(stdout, command, **options):
                         res = output.send(data)
                         res and P.write(res)
                     else: output(data)
+                    P.stdout.task_done()
             except StopIteration:
                 P.stop()
                 return
