@@ -36,6 +36,8 @@ class Connection(ConnectionBase):
         if os.name == 'nt':
             self._shell_type = 'powershell'
             self._shell_location = portable.which('Powershell')
+            #self.module_implementation_preferences = ('.ps1', '')
+            #self.become_methods_supported=[]
         super(Connection, self).__init__(*args, **kwargs)
 
     @property
